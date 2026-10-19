@@ -1,4 +1,56 @@
-export type Definition = {name:string; version:number; description:string; tasks:{name:string; taskReferenceName:string; type:string; inputParameters:Record<string,unknown>}[]; [key:string]:unknown};
-export type Run = {workflowId:string; workflowType?:string; workflowName?:string; status:string; startTime:number|string; endTime?:number|string; executionTime?:number; input?:Record<string,unknown>; output?:Record<string,unknown>; tasks?:Task[]; reasonForIncompletion?:string};
-export type Task = {taskId:string; taskDefName:string; referenceTaskName:string; status:string; retryCount:number; startTime:number; endTime:number; workerId?:string; inputData:Record<string,unknown>; outputData:Record<string,unknown>; reasonForIncompletion?:string};
-export type Infrastructure = {observedAt:number; engine:{status:string;latencyMs:number|null}; api:{status:string}; workers:{name:string;status:string;lastPollTime:number|null;pollers:unknown[]}[]; gemini:{configured:boolean;enabled:boolean;model:string;status:string}; storage:{type:string;status:string}};
+export type Definition = {
+  name: string;
+  version: number;
+  description: string;
+  tasks: {
+    name: string;
+    taskReferenceName: string;
+    type: string;
+    inputParameters: Record<string, unknown>;
+  }[];
+  [key: string]: unknown;
+};
+export type Run = {
+  workflowId: string;
+  workflowType?: string;
+  workflowName?: string;
+  status: string;
+  startTime: number | string;
+  endTime?: number | string;
+  executionTime?: number;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  tasks?: Task[];
+  reasonForIncompletion?: string;
+};
+export type Task = {
+  taskId: string;
+  taskDefName: string;
+  referenceTaskName: string;
+  status: string;
+  retryCount: number;
+  startTime: number;
+  endTime: number;
+  workerId?: string;
+  inputData: Record<string, unknown>;
+  outputData: Record<string, unknown>;
+  reasonForIncompletion?: string;
+};
+export type Infrastructure = {
+  observedAt: number;
+  engine: { status: string; latencyMs: number | null };
+  api: { status: string };
+  workers: {
+    name: string;
+    status: string;
+    lastPollTime: number | null;
+    pollers: unknown[];
+  }[];
+  gemini: {
+    configured: boolean;
+    enabled: boolean;
+    model: string;
+    status: string;
+  };
+  storage: { type: string; status: string };
+};

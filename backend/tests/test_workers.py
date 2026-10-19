@@ -35,3 +35,19 @@ def test_definitions_have_bounded_retries_and_timeouts():
     assert all(d['retryCount']<=2 and 0<d['timeoutSeconds']<=90 for d in TASK_DEFS)
     assert next(d for d in TASK_DEFS if d['name']=='cp_analyze_incident')['retryCount']==0
     assert all(w['timeoutSeconds']==600 for w in WORKFLOWS)
+
+
+def test_ai_validates_structured_output_and_sanitizes_errors(monkeypatch):
+    import json
+    settings=Mock(enable_gemini=True,gemini_api_key='not-a-real-key',gemini_model='test-model')
+    monkeypatch.setattr(workers,'Settings',lambda:settings)
+    provider=Mock()
+    provider.models.generate_content.return_value.text=json.dumps({'summary':'Observed timeouts','likely_cause':'Pool exhaustion may be involved','evidence':['timeout'], 'recommended_actions':['Inspect pool limits'],'confidence':'low'})
+    manager=Mock();manager.__enter__=Mock(return_value=provider);manager.__exit__=Mock(return_value=False)
+    monkeypatch.setattr(workers.genai,'Client',Mock(return_value=manager))
+    incident={'service':'checkout','severity':'high','logs':'ERROR timeout'}
+    assert workers.analyze_incident(incident)['provider']=='gemini'
+    provider.models.generate_content.side_effect=RuntimeError('sensitive provider details')
+    with pytest.raises(RuntimeError,match='Gemini request failed') as exc:
+        workers.analyze_incident(incident)
+    assert 'sensitive' not in str(exc.value)

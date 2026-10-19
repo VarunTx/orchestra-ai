@@ -58,7 +58,9 @@ def analyze_incident(incident: dict, failure_mode: str = 'none', delay_seconds: 
         analysis = Analysis.model_validate_json(response.text)
     except Exception as exc:
         # Never send provider exception bodies (which can contain request details) to task history.
-        raise RuntimeError(f'Gemini request failed ({type(exc).__name__}); verify credentials, model access and quota') from None
+        code = getattr(exc, 'code', None)
+        safe_code = f', HTTP {code}' if isinstance(code, int) else ''
+        raise RuntimeError(f'Gemini request failed ({type(exc).__name__}{safe_code}); verify credentials, model access and quota') from None
     return {**analysis.model_dump(), 'provider': 'gemini', 'model': settings.gemini_model}
 
 

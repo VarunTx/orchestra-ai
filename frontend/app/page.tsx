@@ -1,69 +1,1330 @@
-'use client';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Activity, ArrowDown, ArrowRight, ArrowUpRight, Box, Check, CheckCircle2, ChevronLeft, ChevronRight, Circle, Clock3, Code2, Copy, Database, ExternalLink, FileText, GitBranch, Layers3, LayoutDashboard, LogOut, Network, Play, Plus, Radio, RefreshCw, Search, Server, ShieldCheck, Sparkles, Square, Terminal, Workflow, X, Zap } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import type { Definition, Run, Task, Infrastructure } from '@/lib/types';
+"use client";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  Activity,
+  ArrowDown,
+  ArrowRight,
+  ArrowUpRight,
+  Box,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  Clock3,
+  Code2,
+  Copy,
+  Database,
+  ExternalLink,
+  FileText,
+  GitBranch,
+  Layers3,
+  LayoutDashboard,
+  LogOut,
+  Network,
+  Play,
+  Plus,
+  Radio,
+  RefreshCw,
+  Search,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  Terminal,
+  Workflow,
+  X,
+  Zap,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { Definition, Run, Task, Infrastructure } from "@/lib/types";
 
-async function api<T>(path:string, init?:RequestInit):Promise<T> {
-  const r = await fetch(`/api/${path}`, {...init, headers:{'Content-Type':'application/json', ...init?.headers}});
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(`/api/${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
   const body = await r.json();
-  if(!r.ok) throw new Error(r.status === 401 ? 'AUTH' : typeof body.detail === 'string' ? body.detail : 'Invalid request. Check the supplied fields.');
+  if (!r.ok)
+    throw new Error(
+      r.status === 401
+        ? "AUTH"
+        : typeof body.detail === "string"
+          ? body.detail
+          : "Invalid request. Check the supplied fields.",
+    );
   return body;
 }
-const nice = (s:string) => s.replace(/^cp_/, '').replaceAll('_', ' ');
-const date = (n?:number|string) => n ? new Date(n).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
-function Status({value}:{value:string}) { return <span className={`status status-${value.toLowerCase()}`}><span/>{nice(value).toLowerCase()}</span>; }
-function Json({value}:{value:unknown}) {return <pre className="json">{JSON.stringify(value ?? {}, null, 2)}</pre>;}
-function Dag({definition, tasks, onTask}:{definition:Definition; tasks?:Task[]; onTask?:(task:Task)=>void}) {
-  return <div className="dag"><div className="dag-label"><span className="tiny-dot"/> WORKFLOW GRAPH <span>v{definition.version} · sequential DAG</span></div><div className="dag-path"><div className="dag-cap"><Circle size={14}/><span>Input</span></div>{definition.tasks.map((node,i)=> {
-    const task = tasks?.filter(t=>t.referenceTaskName===node.taskReferenceName).at(-1);
-    return <div className="dag-segment" key={node.taskReferenceName}><div className="connector"><ArrowRight size={16}/></div><button className={`dag-node ${task ? 'node-'+task.status.toLowerCase() : ''}`} onClick={()=>task && onTask?.(task)} disabled={!task || !onTask} aria-label={`Inspect ${node.taskReferenceName}`}><div className="node-top"><span className="node-icon">{i===0?<Layers3 size={18}/>:i===1?<Sparkles size={18}/>:<FileText size={18}/>}</span><span className="mono">0{i+1}</span></div><strong>{nice(node.name)}</strong><span>{task ? <Status value={task.status}/> : <><span className="tiny-dot"/> Python worker</>}</span></button></div>;
-  })}<div className="connector"><ArrowRight size={16}/></div><div className="dag-cap"><CheckCircle2 size={16}/><span>Output</span></div></div></div>;
+const nice = (s: string) => s.replace(/^cp_/, "").replaceAll("_", " ");
+const date = (n?: number | string) =>
+  n
+    ? new Date(n).toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : "—";
+function Status({ value }: { value: string }) {
+  return (
+    <span className={`status status-${value.toLowerCase()}`}>
+      <span />
+      {nice(value).toLowerCase()}
+    </span>
+  );
+}
+function Json({ value }: { value: unknown }) {
+  return <pre className="json">{JSON.stringify(value ?? {}, null, 2)}</pre>;
+}
+function Dag({
+  definition,
+  tasks,
+  onTask,
+}: {
+  definition: Definition;
+  tasks?: Task[];
+  onTask?: (task: Task) => void;
+}) {
+  return (
+    <div className="dag">
+      <div className="dag-label">
+        <span className="tiny-dot" /> WORKFLOW GRAPH{" "}
+        <span>v{definition.version} · sequential DAG</span>
+      </div>
+      <div className="dag-path">
+        <div className="dag-cap">
+          <Circle size={14} />
+          <span>Input</span>
+        </div>
+        {definition.tasks.map((node, i) => {
+          const task = tasks
+            ?.filter((t) => t.referenceTaskName === node.taskReferenceName)
+            .at(-1);
+          return (
+            <div className="dag-segment" key={node.taskReferenceName}>
+              <div className="connector">
+                <ArrowRight size={16} />
+              </div>
+              <button
+                className={`dag-node ${task ? "node-" + task.status.toLowerCase() : ""}`}
+                onClick={() => task && onTask?.(task)}
+                disabled={!task || !onTask}
+                aria-label={`Inspect ${node.taskReferenceName}`}
+              >
+                <div className="node-top">
+                  <span className="node-icon">
+                    {i === 0 ? (
+                      <Layers3 size={18} />
+                    ) : i === 1 ? (
+                      <Sparkles size={18} />
+                    ) : (
+                      <FileText size={18} />
+                    )}
+                  </span>
+                  <span className="mono">0{i + 1}</span>
+                </div>
+                <strong>{nice(node.name)}</strong>
+                <span>
+                  {task ? (
+                    <Status value={task.status} />
+                  ) : (
+                    <>
+                      <span className="tiny-dot" /> Python worker
+                    </>
+                  )}
+                </span>
+              </button>
+            </div>
+          );
+        })}
+        <div className="connector">
+          <ArrowRight size={16} />
+        </div>
+        <div className="dag-cap">
+          <CheckCircle2 size={16} />
+          <span>Output</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function Home() {
-  const [view,setView]=useState('Overview'); const [auth,setAuth]=useState<boolean|null>(null); const [token,setToken]=useState('');
-  const [definitions,setDefinitions]=useState<Definition[]>([]); const [runs,setRuns]=useState<Run[]>([]); const [total,setTotal]=useState(0);
-  const [infra,setInfra]=useState<Infrastructure|null>(null); const [error,setError]=useState(''); const [loading,setLoading]=useState(false);
-  const [selectedDef,setSelectedDef]=useState('incident_analysis'); const [selectedRun,setSelectedRun]=useState<Run|null>(null); const [task,setTask]=useState<Task|null>(null);
-  const [filter,setFilter]=useState('ALL'); const [offset,setOffset]=useState(0); const [search,setSearch]=useState(''); const [showJson,setShowJson]=useState(false);
-  const [modal,setModal]=useState(false); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState(''); const [terminateConfirm,setTerminateConfirm]=useState(false);
-  const [runName,setRunName]=useState('diagnostic_pipeline');
-  const refresh=useCallback(async()=>{
+  const [view, setView] = useState("Overview");
+  const [auth, setAuth] = useState<boolean | null>(null);
+  const [token, setToken] = useState("");
+  const [definitions, setDefinitions] = useState<Definition[]>([]);
+  const [runs, setRuns] = useState<Run[]>([]);
+  const [total, setTotal] = useState(0);
+  const [infra, setInfra] = useState<Infrastructure | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [selectedDef, setSelectedDef] = useState("incident_analysis");
+  const [selectedRun, setSelectedRun] = useState<Run | null>(null);
+  const [task, setTask] = useState<Task | null>(null);
+  const [filter, setFilter] = useState("ALL");
+  const [offset, setOffset] = useState(0);
+  const [search, setSearch] = useState("");
+  const [showJson, setShowJson] = useState(false);
+  const [modal, setModal] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [terminateConfirm, setTerminateConfirm] = useState(false);
+  const [runName, setRunName] = useState("diagnostic_pipeline");
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [defs,executions,health] = await Promise.all([api<Definition[]>('workflows'),api<{results:Run[];totalHits:number}>(`executions?size=20&start=${offset}&status=${filter}`),api<Infrastructure>('infrastructure')]);
-      setDefinitions(defs);setRuns(executions.results);setTotal(executions.totalHits);setInfra(health);setAuth(true);setError('');
-    } catch(e) {const message=(e as Error).message;if(message==='AUTH')setAuth(false);else setError(message);}finally{setLoading(false);}
-  },[offset,filter]);
-  useEffect(()=>{refresh();const timer=setInterval(refresh,5000);return ()=>clearInterval(timer);},[refresh]);
-  const runId=selectedRun?.workflowId;
-  useEffect(()=>{if(!runId)return;const update=()=>api<Run>(`executions/${runId}`).then(r=>{setSelectedRun(r);setTask(t=>t?r.tasks?.find(x=>x.taskId===t.taskId)??null:null);}).catch(e=>setError(e.message));update();const timer=setInterval(update,3000);return()=>clearInterval(timer);},[runId]);
-  useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),4000);return()=>clearTimeout(timer);},[notice]);
-  const definition=definitions.find(d=>d.name===selectedDef) ?? definitions[0];
-  const activeDefinition=definitions.find(d=>d.name===(selectedRun?.workflowName || selectedRun?.workflowType));
-  async function login(e:FormEvent) {e.preventDefault();setBusy(true);try{await api('session',{method:'POST',body:JSON.stringify({token})});setToken('');await refresh();}catch(e){setError((e as Error).message==='AUTH'?'Invalid control-plane token':(e as Error).message);}finally{setBusy(false);}}
-  async function start(e:FormEvent<HTMLFormElement>) {e.preventDefault();setBusy(true);const data=new FormData(e.currentTarget);try{
-    const r=await api<{workflowId:string}>('executions',{method:'POST',body:JSON.stringify({name:runName,service:data.get('service'),severity:data.get('severity'),logs:data.get('logs'),failure_mode:data.get('failure_mode') || 'none',delay_seconds:0})});
-    setModal(false);setView('Executions');setSelectedRun(await api<Run>(`executions/${r.workflowId}`));setTask(null);setNotice('Execution started in Conductor');await refresh();
-  }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
-  async function action(action:string) {if(!selectedRun)return;setBusy(true);try{await api(`executions/${selectedRun.workflowId}/${action}`,{method:'POST',body:'{}'});setSelectedRun(await api<Run>(`executions/${selectedRun.workflowId}`));setNotice(action==='retry'?'Retry requested':'Execution terminated');setTerminateConfirm(false);await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
-  function navigate(page:string){setView(page);setSelectedRun(null);setTask(null);setOffset(0);setFilter('ALL');setSearch('');}
-  if(auth===false)return <main className="login"><div className="login-art"><div className="brand"><span className="brand-icon"><Workflow size={25}/></span>conductor<span className="brand-period">.</span></div><div><span className="eyebrow">THE AI ORCHESTRATION WORKSPACE</span><h1>Complex workflows.<br/><em>Clear control.</em></h1><p>One place to run, observe, and understand your AI infrastructure. Powered by Conductor OSS.</p><div className="login-flow"><Layers3/><span/><Sparkles/><span/><CheckCircle2/></div></div><small>CONDUCTOR CONTROL PLANE / 01</small></div><section className="login-form"><ShieldCheck size={30}/><h2>Connect to your workspace</h2><p>Use the control-plane token from your local <code>.env</code> file. Your session stays in an HTTP-only cookie.</p><form onSubmit={login}><label htmlFor="token">Workspace token</label><input id="token" type="password" autoComplete="current-password" required value={token} onChange={e=>setToken(e.target.value)} placeholder="Enter CONTROL_PLANE_TOKEN"/>{error&&<p role="alert" className="error-text">{error}</p>}<Button disabled={busy} type="submit">{busy?'Connecting…':'Open control plane'}<ArrowRight size={17}/></Button></form><small><span className="tiny-dot"/> Private local deployment</small></section></main>;
-  return <div className="shell">
-    <aside className="sidebar"><a className="brand" href="/" aria-label="Conductor home"><span className="brand-icon"><Workflow size={22}/></span>conductor<span className="brand-period">.</span></a><div className="workspace"><span className="workspace-icon">O</span><div><strong>Orchestra AI</strong><small>Local workspace</small></div><span className="workspace-badge">DEV</span></div><div className="nav-label">WORKSPACE</div><nav>{[{label:'Overview',icon:LayoutDashboard},{label:'Workflows',icon:GitBranch},{label:'Executions',icon:Activity},{label:'Infrastructure',icon:Server}].map(({label,icon:Icon})=><button key={label} className={view===label?'nav-item active':'nav-item'} onClick={()=>navigate(label)}><Icon size={18}/>{label}{label==='Workflows'&&<span>{definitions.length || '—'}</span>}</button>)}</nav><div className="sidebar-note"><span className="sidebar-note-icon"><Zap size={18}/></span><strong>Built for the real world.</strong><p>Durable execution.<br/>Observable at every step.</p><a href="https://conductor-oss.github.io/conductor/" target="_blank" rel="noreferrer">Conductor OSS docs <ArrowUpRight size={14}/></a></div><div className="sidebar-bottom"><span className={`live-dot ${infra?.engine.status==='connected'?'':'offline'}`}/><div><strong>{infra?.engine.status==='connected'?'Engine connected':'Engine unavailable'}</strong><small>Conductor OSS · PostgreSQL</small></div></div><button className="signout" onClick={async()=>{await fetch('/api/session',{method:'DELETE'});setAuth(false);setRuns([]);setSelectedRun(null);}}><LogOut size={14}/> Sign out</button></aside>
-    <div className="main-shell"><header className="topbar"><div><span>Workspace</span><ChevronRight size={14}/><strong>{view}</strong></div><div className="topbar-right"><span className="environment"><span className="tiny-dot"/> Local development</span><span className="avatar">OA</span></div></header><main className="content">
-    <div className="page-heading"><div><div className="eyebrow">CONTROL PLANE <span>/</span> {view.toUpperCase()}</div><h1>{selectedRun?'Execution detail':view==='Overview'?'Your orchestration, in focus.':view==='Workflows'?'Designed to keep moving.':view==='Executions'?'Every run. Every detail.':'Know what’s connected.'}</h1><p>{view==='Overview'?'A live view of your workflows, workers, and the work getting done.':view==='Workflows'?'Explore versioned definitions and trace the path from input to outcome.':view==='Executions'?'Follow execution state, inspect task evidence, and recover from failures.':'Real service observations. No inferred cluster metrics.'}</p></div><Button onClick={()=>{setError('');setModal(true);}}><Plus size={17}/> Run workflow</Button></div>
-    {error&&<div className="error-banner" role="alert"><span>{error==='AUTH'?'Session expired':error}</span><Button size="sm" variant="outline" onClick={refresh}>Reconnect</Button></div>}
-    {notice&&<div className="toast" role="status"><Check size={17}/>{notice}</div>}
-    {auth===null&&!error&&<div className="empty"><RefreshCw className="spin"/><h3>Connecting to your control plane…</h3></div>}
-    {selectedRun?<><button className="back-link" onClick={()=>{setSelectedRun(null);setTask(null);}}><ChevronLeft size={15}/> Back to executions</button><section className="panel execution-title"><div><span className="eyebrow">{nice(selectedRun.workflowName || selectedRun.workflowType || '')}</span><h2><Status value={selectedRun.status}/></h2><code>{selectedRun.workflowId}</code><button aria-label="Copy execution ID" className="icon-button" onClick={()=>navigator.clipboard.writeText(selectedRun.workflowId).then(()=>setNotice('Execution ID copied')).catch(()=>setError('Clipboard is unavailable'))}><Copy size={14}/></button></div><div className="execution-actions"><span>Started {date(selectedRun.startTime)}</span>{['FAILED','TIMED_OUT'].includes(selectedRun.status)&&<Button variant="outline" disabled={busy} onClick={()=>action('retry')}><RefreshCw size={15}/> Retry execution</Button>}{selectedRun.status==='RUNNING'&&<Button variant="destructive" disabled={busy} onClick={()=>setTerminateConfirm(true)}><Square size={13}/> Terminate</Button>}</div></section>{selectedRun.reasonForIncompletion&&<div className="error-banner">{selectedRun.reasonForIncompletion}</div>}{activeDefinition&&<Dag definition={activeDefinition} tasks={selectedRun.tasks} onTask={setTask}/>}<div className="inspector-grid"><section className="panel"><div className="panel-heading"><h2>Task timeline</h2><span className="subtle">{selectedRun.tasks?.length || 0} attempts</span></div><div className="task-list">{selectedRun.tasks?.map(t=><button key={t.taskId} onClick={()=>setTask(t)} className={`task-row ${task?.taskId===t.taskId?'selected':''}`}><span className="task-circle">{t.status==='COMPLETED'?<Check size={15}/>:<Clock3 size={15}/>}</span><div><strong>{nice(t.taskDefName)}</strong><small>Attempt {t.retryCount+1} · {t.workerId || 'Awaiting worker'}</small></div><Status value={t.status}/><ChevronRight size={15}/></button>)}</div></section><section className="panel"><div className="panel-heading"><h2>{task?nice(task.taskDefName):'Execution output'}</h2>{task&&<button className="text-button" onClick={()=>setTask(null)}>Show output</button>}</div>{task?<div className="inspector"><div className="detail-pairs"><span>Started<strong>{date(task.startTime)}</strong></span><span>Finished<strong>{date(task.endTime)}</strong></span></div>{task.reasonForIncompletion&&<p className="error-text">{task.reasonForIncompletion}</p>}<h3>Input</h3><Json value={task.inputData}/><h3>Output</h3><Json value={task.outputData}/></div>:<div className="inspector">{selectedRun.status==='RUNNING'&&<p className="subtle">Waiting for the workflow to produce its result. Updates every 3 seconds.</p>}<Json value={selectedRun.output}/><h3>Execution input</h3><Json value={selectedRun.input}/></div>}</section></div></>:<>
-    {view==='Overview'&&<><div className="metrics">{[{label:'Registered workflows',value:definitions.length,foot:'Versioned in Conductor',icon:GitBranch},{label:'Running executions',value:runs.filter(r=>r.status==='RUNNING').length,foot:'In the latest 20 executions',icon:Activity},{label:'Completed executions',value:runs.filter(r=>r.status==='COMPLETED').length,foot:'In the latest 20 executions',icon:CheckCircle2},{label:'Workers polling',value:infra?`${infra.workers.filter(w=>w.status==='polling').length} / ${infra.workers.length}`:'—',foot:'Observed in the last 60 seconds',icon:Radio}].map(({label,value,foot,icon:Icon})=><section className="metric panel" key={label}><div><span>{label}</span><Icon size={17}/></div><strong>{auth?value:'—'}</strong><small>{foot}</small></section>)}</div><div className="overview-feature"><div className="feature-copy"><span className="eyebrow"><Sparkles size={14}/> INCIDENT INTELLIGENCE</span><h2>From noisy signals<br/>to a clearer next step.</h2><p>Normalize incident evidence, analyze it with Gemini, and capture a reviewable report. One durable workflow.</p><button className="text-button" onClick={()=>{setSelectedDef('incident_analysis');navigate('Workflows');}}>Explore workflow <ArrowUpRight size={16}/></button><span className="feature-tag">PYTHON WORKERS <span>+</span> GEMINI</span></div>{definitions.find(d=>d.name==='incident_analysis')&&<Dag definition={definitions.find(d=>d.name==='incident_analysis')!}/>}</div></>}
-    {view==='Workflows'&&<><div className="workflow-grid">{definitions.map(d=><button key={d.name} className={`workflow-card panel ${selectedDef===d.name?'chosen':''}`} onClick={()=>{setSelectedDef(d.name);setShowJson(false);}}><div><span className="workflow-icon">{d.name==='incident_analysis'?<Sparkles size={23}/>:<Terminal size={23}/>}</span><span className="version">v{d.version}</span></div><h2>{nice(d.name)}</h2><p>{d.description}</p><footer><span>{d.tasks.length} tasks</span><span>{d.name==='incident_analysis'?'Gemini + Python':'Python diagnostics'}</span><ArrowUpRight size={17}/></footer></button>)}</div>{definition&&<section className="panel definition-panel"><div className="panel-heading"><div><h2>{nice(definition.name)}</h2><span className="subtle">Registered definition · version {definition.version}</span></div><div className="inline-actions"><Button variant="ghost" onClick={()=>setShowJson(!showJson)}><Code2 size={16}/>{showJson?'View graph':'View JSON'}</Button><Button variant="outline" onClick={()=>{setRunName(definition.name);setModal(true);}}><Play size={14}/> Run</Button></div></div>{showJson?<Json value={definition}/>:<Dag definition={definition}/>}<div className="definition-footer"><ShieldCheck size={15}/><span>Conductor manages task timeouts, retries, and durable execution state.</span></div></section>}</>}
-    {(view==='Overview'||view==='Executions')&&<section className="panel runs-panel"><div className="panel-heading"><div className="heading-inline"><h2>{view==='Overview'?'Recent executions':'Execution history'}</h2><span className="count">{total}</span></div><div className="inline-actions"><span className="live-label"><span className="live-dot"/> {error?'Refresh failed':'Auto-refresh · 5s'}</span><button aria-label="Refresh executions" className="icon-button" onClick={refresh}><RefreshCw size={15} className={loading?'spin':''}/></button></div></div>{view==='Executions'&&<div className="table-tools"><div className="search"><Search size={16}/><input aria-label="Search current page" placeholder="Search this page by workflow or ID…" value={search} onChange={e=>setSearch(e.target.value)}/></div><select aria-label="Filter execution status" value={filter} onChange={e=>{setFilter(e.target.value);setOffset(0);}}>{['ALL','RUNNING','COMPLETED','FAILED','TIMED_OUT','TERMINATED','PAUSED'].map(s=><option key={s} value={s}>{s==='ALL'?'All statuses':nice(s)}</option>)}</select></div>}<div className="table-scroll"><table><thead><tr><th>WORKFLOW / EXECUTION</th><th>STATUS</th><th>STARTED</th><th>DURATION</th><th/></tr></thead><tbody>{runs.filter(r=>(r.workflowType+' '+r.workflowId).toLowerCase().includes(search.toLowerCase())).map(r=><tr key={r.workflowId}><td><button className="run-link" onClick={async()=>{try{setSelectedRun(await api<Run>(`executions/${r.workflowId}`));setTask(null);}catch(e){setError((e as Error).message);}}}><span className="table-icon">{r.workflowType==='incident_analysis'?<Sparkles size={16}/>:<Workflow size={16}/>}</span><span><strong>{nice(r.workflowType || r.workflowName || '')}</strong><code>{r.workflowId.slice(0,18)}…</code></span></button></td><td><Status value={r.status}/></td><td className="subtle">{date(r.startTime)}</td><td className="mono subtle">{r.executionTime!=null?`${(r.executionTime/1000).toFixed(1)}s`:r.endTime?`${((new Date(r.endTime).getTime()-new Date(r.startTime).getTime())/1000).toFixed(1)}s`:'In progress'}</td><td><ArrowUpRight size={16}/></td></tr>)}</tbody></table></div>{!runs.length&&<div className="empty"><Workflow size={30}/><h3>{filter==='ALL'?'Your first execution starts here.':'No executions match this status.'}</h3><p>Run the diagnostic workflow to see real task progress and results.</p><Button variant="outline" onClick={()=>{setRunName('diagnostic_pipeline');setModal(true);}}><Play size={14}/> Run diagnostics</Button></div>}<div className="table-footer"><span>Showing {runs.length?offset+1:0}–{offset+runs.length} of {total} executions</span>{view==='Overview'?<button className="text-button" onClick={()=>navigate('Executions')}>View all executions <ArrowRight size={14}/></button>:<div className="inline-actions"><Button variant="ghost" size="sm" disabled={offset===0} onClick={()=>setOffset(Math.max(0,offset-20))}><ChevronLeft size={15}/> Previous</Button><Button variant="ghost" size="sm" disabled={offset+20>=total} onClick={()=>setOffset(offset+20)}>Next <ChevronRight size={15}/></Button></div>}</div></section>}
-    {view==='Infrastructure'&&infra&&<><div className="service-grid">{[{title:'Conductor OSS',icon:Workflow,status:infra.engine.status,detail:infra.engine.latencyMs===null?'Cannot reach metadata API':`${infra.engine.latencyMs} ms · metadata API response`},{title:'FastAPI gateway',icon:Network,status:infra.api.status,detail:'Authenticated management API'},{title:'Gemini',icon:Sparkles,status:infra.gemini.status,detail:`${infra.gemini.model} · configuration only`},{title:'Persistence',icon:Database,status:'unknown',detail:`${infra.storage.type} · not independently probed`}].map(({title,icon:Icon,status,detail})=><div className="panel service" key={title}><Icon size={24}/><h2>{title}</h2><Status value={status}/><p>{detail}</p></div>)}</div><section className="panel"><div className="panel-heading"><h2>Python worker fleet</h2><span className="subtle">Official Conductor SDK</span></div>{infra.workers.map(w=><div className="worker-row" key={w.name}><span className="table-icon"><Box size={18}/></span><div><strong>{nice(w.name)}</strong><small>Last poll {date(w.lastPollTime || undefined)}</small></div><Status value={w.status}/></div>)}<div className="definition-footer"><Radio size={15}/><span>Polling means Conductor observed a poll within 60 seconds. It is not a guarantee of task success.</span></div></section><div className="infra-note"><ShieldCheck size={19}/><p>Observed {date(infra.observedAt)}. Provider availability is confirmed only by a real execution. CPU, memory, and cluster metrics are not collected by this deployment.</p></div></>}
-    </>}<footer className="page-footer"><span><span className="tiny-dot"/> Powered by Conductor OSS</span><span>Durable workflows. Visible outcomes.</span></footer></main></div>
-    {modal&&<div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget&&!busy)setModal(false);}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="run-title"><div className="panel-heading"><div><span className="eyebrow">NEW EXECUTION</span><h2 id="run-title">Put a workflow in motion.</h2></div><button aria-label="Close run dialog" className="icon-button" disabled={busy} onClick={()=>setModal(false)}><X size={20}/></button></div><form onSubmit={start}><label htmlFor="workflow">Workflow</label><select id="workflow" value={runName} onChange={e=>setRunName(e.target.value)}><option value="diagnostic_pipeline">Diagnostic pipeline · no AI API required</option><option value="incident_analysis">Incident analysis · Gemini</option></select><div className="form-grid"><div><label htmlFor="service">Service</label><input id="service" name="service" defaultValue="checkout-api" maxLength={100} required/></div><div><label htmlFor="severity">Severity</label><select id="severity" name="severity" defaultValue="high">{['low','medium','high','critical'].map(s=><option key={s}>{s}</option>)}</select></div></div><label htmlFor="logs">Incident evidence</label><textarea id="logs" name="logs" rows={5} minLength={10} maxLength={20000} required defaultValue={'Synthetic test incident\nERROR checkout-api: database connection timeout\nERROR request failed after 5000ms\nINFO deployment completed before the first error'}/><small className="form-help">Sample text is explicitly synthetic. Replace it with evidence you are authorized to share. Gemini sends this text to Google.</small>{runName==='diagnostic_pipeline'&&<><label htmlFor="failure">Failure testing</label><select name="failure_mode" id="failure"><option value="none">Normal execution</option><option value="once">Fail once, then recover with Conductor retry</option><option value="always">Exhaust retries and fail</option></select></>}{runName==='incident_analysis'&&!infra?.gemini.enabled&&<p className="error-text">Gemini is disabled. Enable it in .env and restart the API and workers.</p>}{error&&<p role="alert" className="error-text">{error}</p>}<div className="modal-footer"><Button type="button" variant="ghost" onClick={()=>setModal(false)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy || (runName==='incident_analysis'&&!infra?.gemini.enabled)}><Play size={15}/>{busy?'Starting…':'Start execution'}</Button></div></form></section></div>}
-    {terminateConfirm&&<div className="modal-backdrop"><section className="modal compact" role="dialog" aria-modal="true" aria-labelledby="terminate-title"><h2 id="terminate-title">Terminate this execution?</h2><p>Conductor will stop scheduling its remaining tasks. An in-flight provider call may still finish.</p><div className="inline-actions"><Button variant="outline" onClick={()=>setTerminateConfirm(false)}>Keep running</Button><Button variant="destructive" disabled={busy} onClick={()=>action('terminate')}>Terminate execution</Button></div></section></div>}
-  </div>;
+      const [defs, executions, health] = await Promise.allSettled([
+        api<Definition[]>("workflows"),
+        api<{ results: Run[]; totalHits: number }>(
+          `executions?size=20&start=${offset}&status=${filter}`,
+        ),
+        api<Infrastructure>("infrastructure"),
+      ]);
+      const failed = [defs, executions, health].filter(
+        (r) => r.status === "rejected",
+      );
+      if (
+        failed.some(
+          (r) => r.status === "rejected" && r.reason.message === "AUTH",
+        )
+      ) {
+        setAuth(false);
+        return;
+      }
+      if (defs.status === "fulfilled") setDefinitions(defs.value);
+      if (executions.status === "fulfilled") {
+        setRuns(executions.value.results);
+        setTotal(executions.value.totalHits);
+      }
+      if (health.status === "fulfilled") setInfra(health.value);
+      else setInfra(null);
+      if ([defs, executions, health].some((r) => r.status === "fulfilled"))
+        setAuth(true);
+      setError(
+        failed.length
+          ? "Some live data is unavailable. Displayed history may be stale; retrying automatically."
+          : "",
+      );
+    } catch (e) {
+      const message = (e as Error).message;
+      if (message === "AUTH") setAuth(false);
+      else setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [offset, filter]);
+  useEffect(() => {
+    refresh();
+    const timer = setInterval(refresh, 5000);
+    return () => clearInterval(timer);
+  }, [refresh]);
+  useEffect(() => {
+    if (!modal && !terminateConfirm) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+    const focusable = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled),input,select,textarea,[tabindex="0"]',
+        ) || [],
+      );
+    focusable()[0]?.focus();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) {
+        setModal(false);
+        setTerminateConfirm(false);
+      }
+      if (e.key === "Tab") {
+        const items = focusable(),
+          first = items[0],
+          last = items.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => {
+      document.removeEventListener("keydown", handler);
+      previous?.focus();
+    };
+  }, [modal, terminateConfirm, busy]);
+  const runId = selectedRun?.workflowId;
+  useEffect(() => {
+    if (!runId) return;
+    const update = () =>
+      api<Run>(`executions/${runId}`)
+        .then((r) => {
+          setSelectedRun(r);
+          setTask((t) =>
+            t ? (r.tasks?.find((x) => x.taskId === t.taskId) ?? null) : null,
+          );
+        })
+        .catch((e) => setError(e.message));
+    update();
+    const timer = setInterval(update, 3000);
+    return () => clearInterval(timer);
+  }, [runId]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+  const definition =
+    definitions.find((d) => d.name === selectedDef) ?? definitions[0];
+  const activeDefinition = definitions.find(
+    (d) => d.name === (selectedRun?.workflowName || selectedRun?.workflowType),
+  );
+  async function login(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api("session", { method: "POST", body: JSON.stringify({ token }) });
+      setToken("");
+      await refresh();
+    } catch (e) {
+      setError(
+        (e as Error).message === "AUTH"
+          ? "Invalid control-plane token"
+          : (e as Error).message,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function start(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    const data = new FormData(e.currentTarget);
+    try {
+      const r = await api<{ workflowId: string }>("executions", {
+        method: "POST",
+        body: JSON.stringify({
+          name: runName,
+          service: data.get("service"),
+          severity: data.get("severity"),
+          logs: data.get("logs"),
+          failure_mode: data.get("failure_mode") || "none",
+          delay_seconds: 0,
+        }),
+      });
+      setModal(false);
+      setView("Executions");
+      setSelectedRun(await api<Run>(`executions/${r.workflowId}`));
+      setTask(null);
+      setNotice("Execution started in Conductor");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function action(action: string) {
+    if (!selectedRun) return;
+    setBusy(true);
+    try {
+      await api(`executions/${selectedRun.workflowId}/${action}`, {
+        method: "POST",
+        body: "{}",
+      });
+      setSelectedRun(await api<Run>(`executions/${selectedRun.workflowId}`));
+      setNotice(
+        action === "retry" ? "Retry requested" : "Execution terminated",
+      );
+      setTerminateConfirm(false);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  function navigate(page: string) {
+    setView(page);
+    setSelectedRun(null);
+    setTask(null);
+    setOffset(0);
+    setFilter("ALL");
+    setSearch("");
+  }
+  if (auth === false)
+    return (
+      <main className="login">
+        <div className="login-art">
+          <div className="brand">
+            <span className="brand-icon">
+              <Workflow size={25} />
+            </span>
+            conductor<span className="brand-period">.</span>
+          </div>
+          <div>
+            <span className="eyebrow">THE AI ORCHESTRATION WORKSPACE</span>
+            <h1>
+              Complex workflows.
+              <br />
+              <em>Clear control.</em>
+            </h1>
+            <p>
+              One place to run, observe, and understand your AI infrastructure.
+              Powered by Conductor OSS.
+            </p>
+            <div className="login-flow">
+              <Layers3 />
+              <span />
+              <Sparkles />
+              <span />
+              <CheckCircle2 />
+            </div>
+          </div>
+          <small>CONDUCTOR CONTROL PLANE / 01</small>
+        </div>
+        <section className="login-form">
+          <ShieldCheck size={30} />
+          <h2>Connect to your workspace</h2>
+          <p>
+            Use the control-plane token from your local <code>.env</code> file.
+            Your session stays in an HTTP-only cookie.
+          </p>
+          <form onSubmit={login}>
+            <label htmlFor="token">Workspace token</label>
+            <input
+              id="token"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Enter CONTROL_PLANE_TOKEN"
+            />
+            {error && (
+              <p role="alert" className="error-text">
+                {error}
+              </p>
+            )}
+            <Button disabled={busy} type="submit">
+              {busy ? "Connecting…" : "Open control plane"}
+              <ArrowRight size={17} />
+            </Button>
+          </form>
+          <small>
+            <span className="tiny-dot" /> Private local deployment
+          </small>
+        </section>
+      </main>
+    );
+  return (
+    <div className="shell">
+      <aside className="sidebar">
+        <a className="brand" href="/" aria-label="Conductor home">
+          <span className="brand-icon">
+            <Workflow size={22} />
+          </span>
+          conductor<span className="brand-period">.</span>
+        </a>
+        <div className="workspace">
+          <span className="workspace-icon">O</span>
+          <div>
+            <strong>Orchestra AI</strong>
+            <small>Local workspace</small>
+          </div>
+          <span className="workspace-badge">DEV</span>
+        </div>
+        <div className="nav-label">WORKSPACE</div>
+        <nav>
+          {[
+            { label: "Overview", icon: LayoutDashboard },
+            { label: "Workflows", icon: GitBranch },
+            { label: "Executions", icon: Activity },
+            { label: "Infrastructure", icon: Server },
+          ].map(({ label, icon: Icon }) => (
+            <button
+              key={label}
+              className={view === label ? "nav-item active" : "nav-item"}
+              onClick={() => navigate(label)}
+            >
+              <Icon size={18} />
+              {label}
+              {label === "Workflows" && (
+                <span>{definitions.length || "—"}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-note">
+          <span className="sidebar-note-icon">
+            <Zap size={18} />
+          </span>
+          <strong>Built for the real world.</strong>
+          <p>
+            Durable execution.
+            <br />
+            Observable at every step.
+          </p>
+          <a
+            href="https://conductor-oss.github.io/conductor/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Conductor OSS docs <ArrowUpRight size={14} />
+          </a>
+        </div>
+        <div className="sidebar-bottom">
+          <span
+            className={`live-dot ${infra?.engine.status === "connected" ? "" : "offline"}`}
+          />
+          <div>
+            <strong>
+              {infra?.engine.status === "connected"
+                ? "Engine connected"
+                : "Engine unavailable"}
+            </strong>
+            <small>Conductor OSS · PostgreSQL</small>
+          </div>
+        </div>
+        <button
+          className="signout"
+          onClick={async () => {
+            await fetch("/api/session", { method: "DELETE" });
+            setAuth(false);
+            setRuns([]);
+            setSelectedRun(null);
+          }}
+        >
+          <LogOut size={14} /> Sign out
+        </button>
+      </aside>
+      <div className="main-shell">
+        <header className="topbar">
+          <div>
+            <span>Workspace</span>
+            <ChevronRight size={14} />
+            <strong>{view}</strong>
+          </div>
+          <div className="topbar-right">
+            <span className="environment">
+              <span className="tiny-dot" /> Local development
+            </span>
+            <span className="avatar">OA</span>
+          </div>
+        </header>
+        <main className="content">
+          <div className="page-heading">
+            <div>
+              <div className="eyebrow">
+                CONTROL PLANE <span>/</span> {view.toUpperCase()}
+              </div>
+              <h1>
+                {selectedRun
+                  ? "Execution detail"
+                  : view === "Overview"
+                    ? "Your orchestration, in focus."
+                    : view === "Workflows"
+                      ? "Designed to keep moving."
+                      : view === "Executions"
+                        ? "Every run. Every detail."
+                        : "Know what’s connected."}
+              </h1>
+              <p>
+                {view === "Overview"
+                  ? "A live view of your workflows, workers, and the work getting done."
+                  : view === "Workflows"
+                    ? "Explore versioned definitions and trace the path from input to outcome."
+                    : view === "Executions"
+                      ? "Follow execution state, inspect task evidence, and recover from failures."
+                      : "Real service observations. No inferred cluster metrics."}
+              </p>
+            </div>
+            <Button
+              onClick={() => {
+                setError("");
+                setModal(true);
+              }}
+            >
+              <Plus size={17} /> Run workflow
+            </Button>
+          </div>
+          {error && (
+            <div className="error-banner" role="alert">
+              <span>{error === "AUTH" ? "Session expired" : error}</span>
+              <Button size="sm" variant="outline" onClick={refresh}>
+                Reconnect
+              </Button>
+            </div>
+          )}
+          {notice && (
+            <div className="toast" role="status">
+              <Check size={17} />
+              {notice}
+            </div>
+          )}
+          {auth === null && !error && (
+            <div className="empty">
+              <RefreshCw className="spin" />
+              <h3>Connecting to your control plane…</h3>
+            </div>
+          )}
+          {selectedRun ? (
+            <>
+              <button
+                className="back-link"
+                onClick={() => {
+                  setSelectedRun(null);
+                  setTask(null);
+                }}
+              >
+                <ChevronLeft size={15} /> Back to executions
+              </button>
+              <section className="panel execution-title">
+                <div>
+                  <span className="eyebrow">
+                    {nice(
+                      selectedRun.workflowName ||
+                        selectedRun.workflowType ||
+                        "",
+                    )}
+                  </span>
+                  <h2>
+                    <Status value={selectedRun.status} />
+                  </h2>
+                  <code>{selectedRun.workflowId}</code>
+                  <button
+                    aria-label="Copy execution ID"
+                    className="icon-button"
+                    onClick={() =>
+                      navigator.clipboard
+                        .writeText(selectedRun.workflowId)
+                        .then(() => setNotice("Execution ID copied"))
+                        .catch(() => setError("Clipboard is unavailable"))
+                    }
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
+                <div className="execution-actions">
+                  <span>Started {date(selectedRun.startTime)}</span>
+                  {["FAILED", "TIMED_OUT"].includes(selectedRun.status) && (
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => action("retry")}
+                    >
+                      <RefreshCw size={15} /> Retry execution
+                    </Button>
+                  )}
+                  {selectedRun.status === "RUNNING" && (
+                    <Button
+                      variant="destructive"
+                      disabled={busy}
+                      onClick={() => setTerminateConfirm(true)}
+                    >
+                      <Square size={13} /> Terminate
+                    </Button>
+                  )}
+                </div>
+              </section>
+              {selectedRun.reasonForIncompletion && (
+                <div className="error-banner">
+                  {selectedRun.reasonForIncompletion}
+                </div>
+              )}
+              {activeDefinition && (
+                <Dag
+                  definition={activeDefinition}
+                  tasks={selectedRun.tasks}
+                  onTask={setTask}
+                />
+              )}
+              <div className="inspector-grid">
+                <section className="panel">
+                  <div className="panel-heading">
+                    <h2>Task timeline</h2>
+                    <span className="subtle">
+                      {selectedRun.tasks?.length || 0} attempts
+                    </span>
+                  </div>
+                  <div className="task-list">
+                    {selectedRun.tasks?.map((t) => (
+                      <button
+                        key={t.taskId}
+                        onClick={() => setTask(t)}
+                        className={`task-row ${task?.taskId === t.taskId ? "selected" : ""}`}
+                      >
+                        <span className="task-circle">
+                          {t.status === "COMPLETED" ? (
+                            <Check size={15} />
+                          ) : (
+                            <Clock3 size={15} />
+                          )}
+                        </span>
+                        <div>
+                          <strong>{nice(t.taskDefName)}</strong>
+                          <small>
+                            Attempt {t.retryCount + 1} ·{" "}
+                            {t.workerId || "Awaiting worker"}
+                          </small>
+                        </div>
+                        <Status value={t.status} />
+                        <ChevronRight size={15} />
+                      </button>
+                    ))}
+                  </div>
+                </section>
+                <section className="panel">
+                  <div className="panel-heading">
+                    <h2>
+                      {task ? nice(task.taskDefName) : "Execution output"}
+                    </h2>
+                    {task && (
+                      <button
+                        className="text-button"
+                        onClick={() => setTask(null)}
+                      >
+                        Show output
+                      </button>
+                    )}
+                  </div>
+                  {task ? (
+                    <div className="inspector">
+                      <div className="detail-pairs">
+                        <span>
+                          Started<strong>{date(task.startTime)}</strong>
+                        </span>
+                        <span>
+                          Finished<strong>{date(task.endTime)}</strong>
+                        </span>
+                      </div>
+                      {task.reasonForIncompletion && (
+                        <p className="error-text">
+                          {task.reasonForIncompletion}
+                        </p>
+                      )}
+                      <h3>Input</h3>
+                      <Json value={task.inputData} />
+                      <h3>Output</h3>
+                      <Json value={task.outputData} />
+                    </div>
+                  ) : (
+                    <div className="inspector">
+                      {selectedRun.status === "RUNNING" && (
+                        <p className="subtle">
+                          Waiting for the workflow to produce its result.
+                          Updates every 3 seconds.
+                        </p>
+                      )}
+                      <Json value={selectedRun.output} />
+                      <h3>Execution input</h3>
+                      <Json value={selectedRun.input} />
+                    </div>
+                  )}
+                </section>
+              </div>
+            </>
+          ) : (
+            <>
+              {view === "Overview" && (
+                <>
+                  <div className="metrics">
+                    {[
+                      {
+                        label: "Registered workflows",
+                        value: definitions.length,
+                        foot: "Versioned in Conductor",
+                        icon: GitBranch,
+                      },
+                      {
+                        label: "Running executions",
+                        value: runs.filter((r) => r.status === "RUNNING")
+                          .length,
+                        foot: "In the latest 20 executions",
+                        icon: Activity,
+                      },
+                      {
+                        label: "Completed executions",
+                        value: runs.filter((r) => r.status === "COMPLETED")
+                          .length,
+                        foot: "In the latest 20 executions",
+                        icon: CheckCircle2,
+                      },
+                      {
+                        label: "Workers polling",
+                        value: infra
+                          ? `${infra.workers.filter((w) => w.status === "polling").length} / ${infra.workers.length}`
+                          : "—",
+                        foot: "Observed in the last 60 seconds",
+                        icon: Radio,
+                      },
+                    ].map(({ label, value, foot, icon: Icon }) => (
+                      <section className="metric panel" key={label}>
+                        <div>
+                          <span>{label}</span>
+                          <Icon size={17} />
+                        </div>
+                        <strong>{auth && !error ? value : "—"}</strong>
+                        <small>{foot}</small>
+                      </section>
+                    ))}
+                  </div>
+                  <div className="overview-feature">
+                    <div className="feature-copy">
+                      <span className="eyebrow">
+                        <Sparkles size={14} /> INCIDENT INTELLIGENCE
+                      </span>
+                      <h2>
+                        From noisy signals
+                        <br />
+                        to a clearer next step.
+                      </h2>
+                      <p>
+                        Normalize incident evidence, analyze it with Gemini, and
+                        capture a reviewable report. One durable workflow.
+                      </p>
+                      <button
+                        className="text-button"
+                        onClick={() => {
+                          setSelectedDef("incident_analysis");
+                          navigate("Workflows");
+                        }}
+                      >
+                        Explore workflow <ArrowUpRight size={16} />
+                      </button>
+                      <span className="feature-tag">
+                        PYTHON WORKERS <span>+</span> GEMINI
+                      </span>
+                    </div>
+                    {definitions.find(
+                      (d) => d.name === "incident_analysis",
+                    ) && (
+                      <Dag
+                        definition={definitions.find(
+                          (d) => d.name === "incident_analysis",
+                        )!}
+                      />
+                    )}
+                  </div>
+                </>
+              )}
+              {view === "Workflows" && (
+                <>
+                  <div className="workflow-grid">
+                    {definitions.map((d) => (
+                      <button
+                        key={d.name}
+                        className={`workflow-card panel ${selectedDef === d.name ? "chosen" : ""}`}
+                        onClick={() => {
+                          setSelectedDef(d.name);
+                          setShowJson(false);
+                        }}
+                      >
+                        <div>
+                          <span className="workflow-icon">
+                            {d.name === "incident_analysis" ? (
+                              <Sparkles size={23} />
+                            ) : (
+                              <Terminal size={23} />
+                            )}
+                          </span>
+                          <span className="version">v{d.version}</span>
+                        </div>
+                        <h2>{nice(d.name)}</h2>
+                        <p>{d.description}</p>
+                        <footer>
+                          <span>{d.tasks.length} tasks</span>
+                          <span>
+                            {d.name === "incident_analysis"
+                              ? "Gemini + Python"
+                              : "Python diagnostics"}
+                          </span>
+                          <ArrowUpRight size={17} />
+                        </footer>
+                      </button>
+                    ))}
+                  </div>
+                  {definition && (
+                    <section className="panel definition-panel">
+                      <div className="panel-heading">
+                        <div>
+                          <h2>{nice(definition.name)}</h2>
+                          <span className="subtle">
+                            Registered definition · version {definition.version}
+                          </span>
+                        </div>
+                        <div className="inline-actions">
+                          <Button
+                            variant="ghost"
+                            onClick={() => setShowJson(!showJson)}
+                          >
+                            <Code2 size={16} />
+                            {showJson ? "View graph" : "View JSON"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setRunName(definition.name);
+                              setModal(true);
+                            }}
+                          >
+                            <Play size={14} /> Run
+                          </Button>
+                        </div>
+                      </div>
+                      {showJson ? (
+                        <Json value={definition} />
+                      ) : (
+                        <Dag definition={definition} />
+                      )}
+                      <div className="definition-footer">
+                        <ShieldCheck size={15} />
+                        <span>
+                          Conductor manages task timeouts, retries, and durable
+                          execution state.
+                        </span>
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
+              {(view === "Overview" || view === "Executions") && (
+                <section className="panel runs-panel">
+                  <div className="panel-heading">
+                    <div className="heading-inline">
+                      <h2>
+                        {view === "Overview"
+                          ? "Recent executions"
+                          : "Execution history"}
+                      </h2>
+                      <span className="count">{total}</span>
+                    </div>
+                    <div className="inline-actions">
+                      <span className="live-label">
+                        <span className="live-dot" />{" "}
+                        {error ? "Refresh failed" : "Auto-refresh · 5s"}
+                      </span>
+                      <button
+                        aria-label="Refresh executions"
+                        className="icon-button"
+                        onClick={refresh}
+                      >
+                        <RefreshCw
+                          size={15}
+                          className={loading ? "spin" : ""}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                  {view === "Executions" && (
+                    <div className="table-tools">
+                      <div className="search">
+                        <Search size={16} />
+                        <input
+                          aria-label="Search current page"
+                          placeholder="Search this page by workflow or ID…"
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                        />
+                      </div>
+                      <select
+                        aria-label="Filter execution status"
+                        value={filter}
+                        onChange={(e) => {
+                          setFilter(e.target.value);
+                          setOffset(0);
+                        }}
+                      >
+                        {[
+                          "ALL",
+                          "RUNNING",
+                          "COMPLETED",
+                          "FAILED",
+                          "TIMED_OUT",
+                          "TERMINATED",
+                          "PAUSED",
+                        ].map((s) => (
+                          <option key={s} value={s}>
+                            {s === "ALL" ? "All statuses" : nice(s)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>WORKFLOW / EXECUTION</th>
+                          <th>STATUS</th>
+                          <th>STARTED</th>
+                          <th>DURATION</th>
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {runs
+                          .filter((r) =>
+                            (r.workflowType + " " + r.workflowId)
+                              .toLowerCase()
+                              .includes(search.toLowerCase()),
+                          )
+                          .map((r) => (
+                            <tr key={r.workflowId}>
+                              <td>
+                                <button
+                                  className="run-link"
+                                  onClick={async () => {
+                                    try {
+                                      setSelectedRun(
+                                        await api<Run>(
+                                          `executions/${r.workflowId}`,
+                                        ),
+                                      );
+                                      setTask(null);
+                                    } catch (e) {
+                                      setError((e as Error).message);
+                                    }
+                                  }}
+                                >
+                                  <span className="table-icon">
+                                    {r.workflowType === "incident_analysis" ? (
+                                      <Sparkles size={16} />
+                                    ) : (
+                                      <Workflow size={16} />
+                                    )}
+                                  </span>
+                                  <span>
+                                    <strong>
+                                      {nice(
+                                        r.workflowType || r.workflowName || "",
+                                      )}
+                                    </strong>
+                                    <code>{r.workflowId.slice(0, 18)}…</code>
+                                  </span>
+                                </button>
+                              </td>
+                              <td>
+                                <Status value={r.status} />
+                              </td>
+                              <td className="subtle">{date(r.startTime)}</td>
+                              <td className="mono subtle">
+                                {r.executionTime != null
+                                  ? `${(r.executionTime / 1000).toFixed(1)}s`
+                                  : r.endTime
+                                    ? `${((new Date(r.endTime).getTime() - new Date(r.startTime).getTime()) / 1000).toFixed(1)}s`
+                                    : "In progress"}
+                              </td>
+                              <td>
+                                <ArrowUpRight size={16} />
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {!runs.length && (
+                    <div className="empty">
+                      <Workflow size={30} />
+                      <h3>
+                        {filter === "ALL"
+                          ? "Your first execution starts here."
+                          : "No executions match this status."}
+                      </h3>
+                      <p>
+                        Run the diagnostic workflow to see real task progress
+                        and results.
+                      </p>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setRunName("diagnostic_pipeline");
+                          setModal(true);
+                        }}
+                      >
+                        <Play size={14} /> Run diagnostics
+                      </Button>
+                    </div>
+                  )}
+                  <div className="table-footer">
+                    <span>
+                      Showing {runs.length ? offset + 1 : 0}–
+                      {offset + runs.length} of {total} executions
+                    </span>
+                    {view === "Overview" ? (
+                      <button
+                        className="text-button"
+                        onClick={() => navigate("Executions")}
+                      >
+                        View all executions <ArrowRight size={14} />
+                      </button>
+                    ) : (
+                      <div className="inline-actions">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={offset === 0}
+                          onClick={() => setOffset(Math.max(0, offset - 20))}
+                        >
+                          <ChevronLeft size={15} /> Previous
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={offset + 20 >= total}
+                          onClick={() => setOffset(offset + 20)}
+                        >
+                          Next <ChevronRight size={15} />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+              {view === "Infrastructure" && infra && (
+                <>
+                  <div className="service-grid">
+                    {[
+                      {
+                        title: "Conductor OSS",
+                        icon: Workflow,
+                        status: infra.engine.status,
+                        detail:
+                          infra.engine.latencyMs === null
+                            ? "Cannot reach metadata API"
+                            : `${infra.engine.latencyMs} ms · metadata API response`,
+                      },
+                      {
+                        title: "FastAPI gateway",
+                        icon: Network,
+                        status: infra.api.status,
+                        detail: "Authenticated management API",
+                      },
+                      {
+                        title: "Gemini",
+                        icon: Sparkles,
+                        status: infra.gemini.status,
+                        detail: `${infra.gemini.model} · configuration only`,
+                      },
+                      {
+                        title: "Persistence",
+                        icon: Database,
+                        status: "unknown",
+                        detail: `${infra.storage.type} · not independently probed`,
+                      },
+                    ].map(({ title, icon: Icon, status, detail }) => (
+                      <div className="panel service" key={title}>
+                        <Icon size={24} />
+                        <h2>{title}</h2>
+                        <Status value={status} />
+                        <p>{detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <section className="panel">
+                    <div className="panel-heading">
+                      <h2>Python worker fleet</h2>
+                      <span className="subtle">Official Conductor SDK</span>
+                    </div>
+                    {infra.workers.map((w) => (
+                      <div className="worker-row" key={w.name}>
+                        <span className="table-icon">
+                          <Box size={18} />
+                        </span>
+                        <div>
+                          <strong>{nice(w.name)}</strong>
+                          <small>
+                            Last poll {date(w.lastPollTime || undefined)}
+                          </small>
+                        </div>
+                        <Status value={w.status} />
+                      </div>
+                    ))}
+                    <div className="definition-footer">
+                      <Radio size={15} />
+                      <span>
+                        Polling means Conductor observed a poll within 60
+                        seconds. It is not a guarantee of task success.
+                      </span>
+                    </div>
+                  </section>
+                  <div className="infra-note">
+                    <ShieldCheck size={19} />
+                    <p>
+                      Observed {date(infra.observedAt)}. Provider availability
+                      is confirmed only by a real execution. CPU, memory, and
+                      cluster metrics are not collected by this deployment.
+                    </p>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+          <footer className="page-footer">
+            <span>
+              <span className="tiny-dot" /> Powered by Conductor OSS
+            </span>
+            <span>Durable workflows. Visible outcomes.</span>
+          </footer>
+        </main>
+      </div>
+      {modal && (
+        <div
+          className="modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !busy) setModal(false);
+          }}
+        >
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="run-title"
+          >
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">NEW EXECUTION</span>
+                <h2 id="run-title">Put a workflow in motion.</h2>
+              </div>
+              <button
+                aria-label="Close run dialog"
+                className="icon-button"
+                disabled={busy}
+                onClick={() => setModal(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={start}>
+              <label htmlFor="workflow">Workflow</label>
+              <select
+                id="workflow"
+                value={runName}
+                onChange={(e) => setRunName(e.target.value)}
+              >
+                <option value="diagnostic_pipeline">
+                  Diagnostic pipeline · no AI API required
+                </option>
+                <option value="incident_analysis">
+                  Incident analysis · Gemini
+                </option>
+              </select>
+              <div className="form-grid">
+                <div>
+                  <label htmlFor="service">Service</label>
+                  <input
+                    id="service"
+                    name="service"
+                    defaultValue="checkout-api"
+                    maxLength={100}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="severity">Severity</label>
+                  <select id="severity" name="severity" defaultValue="high">
+                    {["low", "medium", "high", "critical"].map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <label htmlFor="logs">Incident evidence</label>
+              <textarea
+                id="logs"
+                name="logs"
+                rows={5}
+                minLength={10}
+                maxLength={20000}
+                required
+                defaultValue={
+                  "Synthetic test incident\nERROR checkout-api: database connection timeout\nERROR request failed after 5000ms\nINFO deployment completed before the first error"
+                }
+              />
+              <small className="form-help">
+                Sample text is explicitly synthetic. Replace it with evidence
+                you are authorized to share. Gemini sends this text to Google.
+              </small>
+              {runName === "diagnostic_pipeline" && (
+                <>
+                  <label htmlFor="failure">Failure testing</label>
+                  <select name="failure_mode" id="failure">
+                    <option value="none">Normal execution</option>
+                    <option value="once">
+                      Fail once, then recover with Conductor retry
+                    </option>
+                    <option value="always">Exhaust retries and fail</option>
+                  </select>
+                </>
+              )}
+              {runName === "incident_analysis" && !infra?.gemini.enabled && (
+                <p className="error-text">
+                  Gemini is disabled. Enable it in .env and restart the API and
+                  workers.
+                </p>
+              )}
+              {error && (
+                <p role="alert" className="error-text">
+                  {error}
+                </p>
+              )}
+              <div className="modal-footer">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setModal(false)}
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    busy ||
+                    (runName === "incident_analysis" && !infra?.gemini.enabled)
+                  }
+                >
+                  <Play size={15} />
+                  {busy ? "Starting…" : "Start execution"}
+                </Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+      {terminateConfirm && (
+        <div className="modal-backdrop">
+          <section
+            className="modal compact"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="terminate-title"
+          >
+            <h2 id="terminate-title">Terminate this execution?</h2>
+            <p>
+              Conductor will stop scheduling its remaining tasks. An in-flight
+              provider call may still finish.
+            </p>
+            <div className="inline-actions">
+              <Button
+                variant="outline"
+                onClick={() => setTerminateConfirm(false)}
+              >
+                Keep running
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={busy}
+                onClick={() => action("terminate")}
+              >
+                Terminate execution
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
 }
