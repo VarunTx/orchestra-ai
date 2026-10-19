@@ -27,7 +27,7 @@ Exactly one authorized Gemini test was made with synthetic incident text. Workfl
 
 ## Deployment boundaries
 
-No hosting account/remote is configured, no public deployment was performed, and GitHub Actions has not run remotely. The locally built Compose deployment is the verified deployment target. Production security/backup/HA requirements and feature scope are documented in README.md and DEPLOYMENT.md.
+At the initial delivery checkpoint, no remote was configured. The Orchestra AI repository is now pushed to GitHub and Actions verification has started; no public deployment has been performed. The locally built Compose deployment is the verified deployment target. Production security/backup/HA requirements and feature scope are documented in README.md and DEPLOYMENT.md.
 
 ## Checkpoints
 
@@ -42,5 +42,5 @@ No hosting account/remote is configured, no public deployment was performed, and
 - Added runtime hosted/local labels, Render private DNS configuration, secure cookies and Render-origin validation.
 - Added `render.yaml`: dashboard, private API/engine, worker group and private managed PostgreSQL. Paid resources have not been provisioned.
 - Render's official JSON schema and cross-resource references validate; hosted Conductor image builds successfully.
-- Private GitHub repository created: https://github.com/VarunTx/orchestra-ai. Source push and hosted deployment status are recorded below when verified.
+- Private GitHub repository created: https://github.com/VarunTx/orchestra-ai. Source pushed successfully at commit `e366693`; GitHub Actions verification started.
 - Render account connection and its concrete hosting cost approval are still needed before provisioning.

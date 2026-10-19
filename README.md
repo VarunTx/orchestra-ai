@@ -113,7 +113,7 @@ docker compose logs --tail 100 conductor
 
 A gateway liveness check is available at `/healthz`. Authenticated `/api/infrastructure` reports engine metadata reachability, recent queue poll observations and Gemini configuration. PostgreSQL is not separately probed by the dashboard; Compose health checks verify database readiness. An observed worker poll is not a guarantee of successful task execution.
 
-The Conductor image is pinned by digest; Python transitive dependencies and npm dependencies are locked. PostgreSQL and application runtime images use explicit versions. CI builds the complete Compose deployment and runs the same deterministic tests. The CI workflow has been authored; a remote GitHub Actions run has not been verified until the GitHub repository is connected.
+The Conductor image is pinned by digest; Python transitive dependencies and npm dependencies are locked. PostgreSQL and application runtime images use explicit versions. CI builds the complete Compose deployment and runs the same deterministic tests. The repository is now published privately at [VarunTx/orchestra-ai](https://github.com/VarunTx/orchestra-ai). GitHub Actions verification has started; see the repository Actions tab for its current result.
 
 ## Scope and limitations
 

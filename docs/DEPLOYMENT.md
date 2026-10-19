@@ -22,7 +22,7 @@ The supported and locally verified target is a private, single-host Docker Compo
 
 ## Verification status
 
-All five services build/start locally; deterministic real-engine and browser tests pass. Recovery checks and their exact results are recorded in PROGRESS.md. The remote CI workflow is prepared but has not run on GitHub. A live Gemini request failed with ClientError and needs valid provider access/configuration before the AI portion can be called verified.
+All five services build/start locally; deterministic real-engine and browser tests pass. Recovery checks and their exact results are recorded in PROGRESS.md. The repository has been pushed to GitHub and remote CI verification has started. A live Gemini request failed with ClientError and needs valid provider access/configuration before the AI portion can be called verified.
 
 
 ## Render hosting
