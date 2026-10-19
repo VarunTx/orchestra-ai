@@ -55,3 +55,10 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Verified public HTTPS returns 200, unauthenticated API access returns 401, authenticated definitions load, and session cookie is Secure and HttpOnly.
 - Both existing Playwright tests passed through the public URL (9.2 seconds), including real diagnostic execution with fail-once retry, deterministic task output, definitions, actual worker polling, and mobile layout. Screenshots refreshed by those tests.
 - Added docs/FREE_DEMO.md with login, lifetime limitations and stop/restart instructions. Permanent free cloud hosting remains blocked on a suitable provider account/capacity; this demo does not satisfy that part of the original hosting request.
+
+## Temporary tunnel repair — October 19, 2026
+
+- The initial demo hostname stopped resolving. Cloudflared logged `Unauthorized: Tunnel not found` while the local application remained healthy (HTTP 200).
+- Restarted the tunnel and replaced the stale public origin in ignored `.env`; restarted only the web service.
+- Replacement: https://harvest-transmit-jelsoft-trades.trycloudflare.com . Verified public HTTP 200, unauthenticated API rejection, secure-cookie token login and authenticated workflow definitions. No paid resources or AI calls.
+- Updated FREE_DEMO.md. Quick Tunnel availability is not guaranteed even when the local container is running; permanent hosting remains unresolved.

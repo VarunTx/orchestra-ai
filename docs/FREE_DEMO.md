@@ -6,7 +6,7 @@ Keep the Mac awake and Docker running. The URL is temporary, has no uptime guara
 
 ## Current session
 
-URL: https://tagged-uni-sphere-psychological.trycloudflare.com
+URL: https://harvest-transmit-jelsoft-trades.trycloudflare.com
 
 Sign in using `CONTROL_PLANE_TOKEN` from the local ignored `.env` file. Never commit or share that file. `COOKIE_SECURE=true`; `APP_ORIGINS` includes exactly this HTTPS origin and the local development origins. `ENABLE_GEMINI=false`, so use the diagnostic workflow for non-AI executions. AI incident analysis remains unavailable until separately authorized and verified.
 
