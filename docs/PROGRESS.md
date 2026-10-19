@@ -62,3 +62,19 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Restarted the tunnel and replaced the stale public origin in ignored `.env`; restarted only the web service.
 - Replacement: https://harvest-transmit-jelsoft-trades.trycloudflare.com . Verified public HTTP 200, unauthenticated API rejection, secure-cookie token login and authenticated workflow definitions. No paid resources or AI calls.
 - Updated FREE_DEMO.md. Quick Tunnel availability is not guaranteed even when the local container is running; permanent hosting remains unresolved.
+
+## Independent free hosting investigation — October 19, 2026
+
+- User requested hosting independent of the Mac, with no domain purchase and no charges.
+- Current official Hugging Face docs require a paid plan for new Docker compute Spaces, so that is not a zero-cost alternative.
+- Railway documents a no-card new-user trial with $5 credit, up to 30 days, five services per project and 1 GB RAM limits. This is a candidate for the requested short demo, not a permanent free-hosting guarantee. Trial eligibility, actual available limits and reduced-memory Conductor operation still need verification.
+- Made the Railway connector installation option available. No Railway resources created and no paid subscription authorized. Deployment is blocked on account connection/eligibility; retain Gemini disabled and do not upgrade to a paid plan.
+- References: https://docs.railway.com/pricing/free-trial ; https://docs.railway.com/pricing/faqs ; https://huggingface.co/docs/hub/en/spaces-overview
+
+## Railway staged deployment — October 19, 2026
+
+- Railway connected as VarunTx. Dashboard verified a fresh trial: 30 days or $5 remaining.
+- Created private project Orchestra AI (`68e2641a-a387-4bcf-9307-e25eadebe42f`), production environment (`b0275afe-d627-48e4-b265-3a12b3d1e8f7`), five empty services, and dashboard domain `web-production-95d5e.up.railway.app`.
+- Staged 83 changes: GitHub sources pinned at `1c0ce19`, Docker roots, bounded memory/CPU, private service references, 500 MB PostgreSQL volume, generated database password, existing workspace token, secure cookie/exact origin, hosted labels, and Gemini disabled (no Gemini key uploaded).
+- Conductor staged with 512 MB JVM heap and 1 GB memory cap; runtime suitability remains unverified. Trial credit duration is usage-dependent and no uptime duration is promised.
+- Final accept-deploy call was declined: tool returned "Cancelled — the user did not approve this action. No changes were made." No workaround attempted. Staged changes have not been committed or tested remotely. User approval/application is required to continue deployment.
