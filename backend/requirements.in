@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+httpx
+pydantic-settings
+conductor-python
+google-genai
+pytest

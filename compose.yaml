@@ -1,0 +1,73 @@
+name: conductor-control-plane
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_DB: conductor
+      POSTGRES_USER: conductor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup_env.py}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U conductor -d conductor']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  conductor:
+    image: conductoross/conductor@sha256:d96e4bb8cef00e81de1607fa952d988e8cd7604d7a55ff2288c8feb2baec22da
+    environment:
+      CONFIG_PROP: control-plane.properties
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JAVA_OPTS: -Xms256m -Xmx1024m
+    volumes:
+      - ./infra/conductor.properties:/app/config/control-plane.properties:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS http://localhost:8080/health >/dev/null']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      CONDUCTOR_URL: http://conductor:8080/api
+    ports:
+      - '127.0.0.1:8000:8000'
+    depends_on:
+      conductor:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  workers:
+    build: ./backend
+    command: [python, -m, app.workers]
+    env_file: .env
+    environment:
+      CONDUCTOR_URL: http://conductor:8080/api
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+  web:
+    build: ./frontend
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  postgres_data:
