@@ -78,3 +78,13 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Staged 83 changes: GitHub sources pinned at `1c0ce19`, Docker roots, bounded memory/CPU, private service references, 500 MB PostgreSQL volume, generated database password, existing workspace token, secure cookie/exact origin, hosted labels, and Gemini disabled (no Gemini key uploaded).
 - Conductor staged with 512 MB JVM heap and 1 GB memory cap; runtime suitability remains unverified. Trial credit duration is usage-dependent and no uptime duration is promised.
 - Final accept-deploy call was declined: tool returned "Cancelled — the user did not approve this action. No changes were made." No workaround attempted. Staged changes have not been committed or tested remotely. User approval/application is required to continue deployment.
+
+## Railway live verification — October 19, 2026
+
+- User applied the staged deployment in Railway and requested final verification.
+- All five services report SUCCESS: PostgreSQL, Conductor, FastAPI, official SDK workers and Next.js dashboard. No source fixes or plan upgrades were needed.
+- Working public URL: https://web-production-95d5e.up.railway.app . This runs independently of the Mac and the Cloudflare Quick Tunnel.
+- Verified public HTTPS 200, unauthenticated API 401, existing-token login, Secure/HttpOnly cookie and authenticated workflow definitions.
+- Both Playwright tests passed against Railway (12.6 seconds), covering login, real fail-once diagnostic execution/retry, deterministic task output, definitions/DAG, four actual worker poll observations and mobile layout. Verified workflow `e0cd86c0-7121-4223-9db4-70767cafc0a1` COMPLETED on Railway.
+- Screenshots refreshed from the Railway browser run. Gemini remains disabled; no AI provider request or paid plan upgrade occurred. Hosting consumes the account's trial credit and is not permanently free.
+- Added docs/RAILWAY.md for operation, security, source pinning and credit/retention limits. Earlier tunnel-only and staged-deployment blockers above are historical and superseded by this successful deployment.

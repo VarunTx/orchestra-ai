@@ -1,5 +1,7 @@
 # Free public demo
 
+**Superseded:** The verified independent cloud deployment is now https://web-production-95d5e.up.railway.app . See [RAILWAY.md](RAILWAY.md). The instructions below describe the older Mac-hosted demo only.
+
 Orchestra AI can be shared through an accountless Cloudflare Quick Tunnel. The application, Conductor, Python workers and PostgreSQL run in Docker on this Mac; Cloudflare provides the temporary public HTTPS URL. This is a demo, not independent cloud hosting. There is no cloud hosting subscription or billable AI call in this configuration. The Mac's electricity and Internet connection are still used.
 
 Keep the Mac awake and Docker running. The URL is temporary, has no uptime guarantee and changes when a new tunnel is created. Local PostgreSQL data remains in the existing Docker volume. Only the dashboard is exposed through the tunnel; management calls require the workspace token.
