@@ -44,3 +44,14 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Render's official JSON schema and cross-resource references validate; hosted Conductor image builds successfully.
 - Private GitHub repository created: https://github.com/VarunTx/orchestra-ai. Source pushed successfully at commit `e366693`; GitHub Actions verification started.
 - Render account connection and its concrete hosting cost approval are still needed before provisioning.
+
+## Zero-cost public demo — October 19, 2026
+
+- User required no hosting charges and authorized switching away from Render. Render account connection and My Workspace selection succeeded earlier, but Dashboard browser access remains blocked by saved permissions. No bypass was attempted and no Render resources were provisioned.
+- Confirmed Render's prepared multi-service Blueprint uses paid resources. Do not apply it under the current zero-cost requirement.
+- Started accountless Cloudflare Quick Tunnel to the existing Docker Desktop web service. No new cloud account/payment method or paid resource was created.
+- Public demo: https://tagged-uni-sphere-psychological.trycloudflare.com . This is temporary public access to the Mac, NOT independent cloud hosting. Mac, Docker and tunnel must stay running; hostname changes on tunnel recreation.
+- Set exact public allowed origin and Secure/HttpOnly session cookies; kept Gemini disabled. No Gemini request was made.
+- Verified public HTTPS returns 200, unauthenticated API access returns 401, authenticated definitions load, and session cookie is Secure and HttpOnly.
+- Both existing Playwright tests passed through the public URL (9.2 seconds), including real diagnostic execution with fail-once retry, deterministic task output, definitions, actual worker polling, and mobile layout. Screenshots refreshed by those tests.
+- Added docs/FREE_DEMO.md with login, lifetime limitations and stop/restart instructions. Permanent free cloud hosting remains blocked on a suitable provider account/capacity; this demo does not satisfy that part of the original hosting request.
