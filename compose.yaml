@@ -1,4 +1,4 @@
-name: conductor-control-plane
+name: orchestra-ai
 services:
   postgres:
     image: postgres:16.6-alpine
@@ -78,3 +78,5 @@ services:
     restart: unless-stopped
 volumes:
   postgres_data:
+    name: ${POSTGRES_VOLUME_NAME:-orchestra-ai_postgres_data}
+    external: ${POSTGRES_VOLUME_EXTERNAL:-false}

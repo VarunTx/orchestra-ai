@@ -18,13 +18,22 @@ engine = Engine(settings.conductor_url)
 @asynccontextmanager
 async def lifespan(app):
     # Startup must fail if definitions cannot be installed; Compose can restart safely.
-    await engine.request('POST', 'metadata/taskdefs', json=TASK_DEFS)
-    await engine.request('PUT', 'metadata/workflow', json=WORKFLOWS)
+    deadline = time.monotonic() + 180
+    while True:
+        try:
+            # Metadata registration is idempotent; tolerate cloud dependency startup order.
+            await engine.request('POST', 'metadata/taskdefs', json=TASK_DEFS)
+            await engine.request('PUT', 'metadata/workflow', json=WORKFLOWS)
+            break
+        except HTTPException as exc:
+            if exc.status_code not in (502, 503) or time.monotonic() >= deadline:
+                raise
+            await asyncio.sleep(3)
     yield
     await engine.close()
 
 
-app = FastAPI(title='Conductor Control Plane', version='1.0.0', lifespan=lifespan)
+app = FastAPI(title='Orchestra AI', version='1.0.0', lifespan=lifespan)
 
 
 def authorize(authorization: str = Header(default='')):

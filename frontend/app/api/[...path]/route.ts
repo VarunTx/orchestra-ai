@@ -1,7 +1,7 @@
 import { allowedOrigin } from "@/lib/origin";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-const API = process.env.API_URL || "http://127.0.0.1:8000";
+import { API_URL as API } from "@/lib/server-config";
 async function proxy(
   req: NextRequest,
   ctx: { params: Promise<{ path: string[] }> },

@@ -1,3 +1,4 @@
+import { API_URL } from "@/lib/server-config";
 import { allowedOrigin } from "@/lib/origin";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -11,13 +12,10 @@ export async function POST(req: NextRequest) {
         { detail: "Enter a valid control-plane token" },
         { status: 401 },
       );
-    const response = await fetch(
-      `${process.env.API_URL || "http://127.0.0.1:8000"}/api/session`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(10000),
-      },
-    );
+    const response = await fetch(`${API_URL}/api/session`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    });
     if (!response.ok)
       return NextResponse.json(
         {

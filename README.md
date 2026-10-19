@@ -1,4 +1,4 @@
-# Conductor Control Plane
+# Orchestra AI
 
 A Python-first AI orchestration workspace powered by **the actual Conductor OSS engine**. Run workflows, inspect their DAG and task attempts, investigate failures, and observe SDK worker polls through a polished Next.js dashboard.
 
@@ -113,7 +113,7 @@ docker compose logs --tail 100 conductor
 
 A gateway liveness check is available at `/healthz`. Authenticated `/api/infrastructure` reports engine metadata reachability, recent queue poll observations and Gemini configuration. PostgreSQL is not separately probed by the dashboard; Compose health checks verify database readiness. An observed worker poll is not a guarantee of successful task execution.
 
-The Conductor image is pinned by digest; Python transitive dependencies and npm dependencies are locked. PostgreSQL and application runtime images use explicit versions. CI builds the complete Compose deployment and runs the same deterministic tests. The CI workflow has been authored; a remote GitHub Actions run has not been verified because this repository has no configured remote.
+The Conductor image is pinned by digest; Python transitive dependencies and npm dependencies are locked. PostgreSQL and application runtime images use explicit versions. CI builds the complete Compose deployment and runs the same deterministic tests. The CI workflow has been authored; a remote GitHub Actions run has not been verified until the GitHub repository is connected.
 
 ## Scope and limitations
 

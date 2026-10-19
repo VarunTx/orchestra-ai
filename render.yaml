@@ -1,0 +1,126 @@
+# Orchestra AI: one public web service, two private services, a worker and private Postgres.
+# Creating this Blueprint provisions paid resources. Review Render's cost estimate first.
+services:
+  - name: orchestra-ai
+    type: web
+    runtime: docker
+    region: oregon
+    plan: 0.5c-512mb
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    healthCheckPath: /
+    autoDeployTrigger: "off"
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: DEPLOYMENT_ENVIRONMENT
+        value: hosted
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: API_HOST
+        fromService:
+          name: orchestra-ai-api
+          type: pserv
+          property: host
+  - name: orchestra-ai-api
+    type: pserv
+    runtime: docker
+    region: oregon
+    plan: 0.5c-512mb
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    autoDeployTrigger: "off"
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: CONTROL_PLANE_TOKEN
+        generateValue: true
+      - key: CONDUCTOR_HOST
+        fromService:
+          name: orchestra-ai-conductor
+          type: pserv
+          property: host
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: ENABLE_GEMINI
+        value: "false"
+  - name: orchestra-ai-workers
+    type: worker
+    runtime: docker
+    region: oregon
+    plan: 1c-2g
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: python -m app.workers
+    autoDeployTrigger: "off"
+    envVars:
+      - key: CONDUCTOR_HOST
+        fromService:
+          name: orchestra-ai-conductor
+          type: pserv
+          property: host
+      - key: CONTROL_PLANE_TOKEN
+        fromService:
+          name: orchestra-ai-api
+          type: pserv
+          envVarKey: CONTROL_PLANE_TOKEN
+      - key: GEMINI_API_KEY
+        fromService:
+          name: orchestra-ai-api
+          type: pserv
+          envVarKey: GEMINI_API_KEY
+      - key: GEMINI_MODEL
+        fromService:
+          name: orchestra-ai-api
+          type: pserv
+          envVarKey: GEMINI_MODEL
+      - key: ENABLE_GEMINI
+        fromService:
+          name: orchestra-ai-api
+          type: pserv
+          envVarKey: ENABLE_GEMINI
+  - name: orchestra-ai-conductor
+    type: pserv
+    runtime: docker
+    region: oregon
+    plan: 1c-2g
+    dockerfilePath: ./infra/render/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: "off"
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: JAVA_OPTS
+        value: -Xms256m -Xmx1024m
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: orchestra-ai-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: orchestra-ai-db
+          property: port
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: orchestra-ai-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: orchestra-ai-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: orchestra-ai-db
+          property: password
+
+databases:
+  - name: orchestra-ai-db
+    region: oregon
+    plan: 0.5c-1g
+    databaseName: conductor
+    user: conductor
+    postgresMajorVersion: "16"
+    diskSizeGB: 5
+    ipAllowList: []

@@ -1,0 +1,4 @@
+FROM conductoross/conductor@sha256:d96e4bb8cef00e81de1607fa952d988e8cd7604d7a55ff2288c8feb2baec22da
+COPY infra/conductor.properties /app/config/control-plane.properties
+ENV CONFIG_PROP=control-plane.properties
+EXPOSE 8080

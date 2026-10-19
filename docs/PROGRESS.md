@@ -33,3 +33,14 @@ No hosting account/remote is configured, no public deployment was performed, and
 
 - `c676a0f`: initial full implementation and deterministic execution verification.
 - Final verification/docs/fixes checkpoint follows this report; consult `git log` for its hash.
+
+## Orchestra AI rename and Render preparation
+
+- Renamed product UI, page metadata, API title, npm package and Compose project to Orchestra AI.
+- Preserved the original local PostgreSQL volume during the Compose rename; real history remains available.
+- Replaced the Gemini credential in ignored `.env`; no new provider request has been made.
+- Added runtime hosted/local labels, Render private DNS configuration, secure cookies and Render-origin validation.
+- Added `render.yaml`: dashboard, private API/engine, worker group and private managed PostgreSQL. Paid resources have not been provisioned.
+- Render's official JSON schema and cross-resource references validate; hosted Conductor image builds successfully.
+- Private GitHub repository created: https://github.com/VarunTx/orchestra-ai. Source push and hosted deployment status are recorded below when verified.
+- Render account connection and its concrete hosting cost approval are still needed before provisioning.
