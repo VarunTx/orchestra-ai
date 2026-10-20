@@ -88,3 +88,12 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Both Playwright tests passed against Railway (12.6 seconds), covering login, real fail-once diagnostic execution/retry, deterministic task output, definitions/DAG, four actual worker poll observations and mobile layout. Verified workflow `e0cd86c0-7121-4223-9db4-70767cafc0a1` COMPLETED on Railway.
 - Screenshots refreshed from the Railway browser run. Gemini remains disabled; no AI provider request or paid plan upgrade occurred. Hosting consumes the account's trial credit and is not permanently free.
 - Added docs/RAILWAY.md for operation, security, source pinning and credit/retention limits. Earlier tunnel-only and staged-deployment blockers above are historical and superseded by this successful deployment.
+
+## Agent engineering harness — October 20, 2026
+
+- Added project-scoped OpenCode definitions; no application code, dependencies or runtime configuration changed.
+- `.opencode/skills/workflow-safety/SKILL.md` and `.opencode/skills/enterprise-security/SKILL.md` encode the Conductor/retry/billing rules and the authentication/tenant/secrets rules already implemented in `backend/app/` and `frontend/app/api/`.
+- `.opencode/commands/verify.md` and `.opencode/commands/review.md` add `/verify` (pytest, typecheck, production build, gated local Playwright) and `/review` (diff review over regressions, contracts, security, tests, scope).
+- `docs/ARCHITECTURE.md` documents the Compose topology, request path, workflow/task contracts, trust boundaries and configuration as implemented. It records that the system is single-tenant with one shared token and that `storage` health is not independently probed.
+- Discoverability verified through the local OpenCode 2.1.1 API: `/api/skill` lists 42 skills including `workflow-safety` and `enterprise-security`; `/api/command` lists `verify` and the project `review` command replacing the built-in one.
+- Not executed in this change: no deployment, no Railway mutation, no Gemini/provider call, no destructive recovery test.
