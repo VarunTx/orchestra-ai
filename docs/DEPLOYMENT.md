@@ -41,3 +41,14 @@ Cloud environment variables resolve private DNS and database credentials without
 Local volume migration: the renamed Compose stack uses `POSTGRES_VOLUME_NAME` from `.env` and `POSTGRES_VOLUME_EXTERNAL=true` to retain the original `conductor-control-plane_postgres_data` volume. New installations default to `orchestra-ai_postgres_data`.
 
 References: [Render Blueprint specification](https://render.com/docs/blueprint-spec), [private services](https://render.com/docs/private-services), [current pricing](https://render.com/pricing). Hosted cost and provisioning remain pending account access and cost approval.
+
+## Application database and owner login (added October 2026)
+
+The API now creates its own `orchestra` database inside the existing PostgreSQL instance and runs SQL migrations at startup. Give the API service `DATABASE_HOST`/`POSTGRES_PASSWORD` access to the same server; do not point it at Conductor's schema.
+
+Two additional secrets are required for a hosted deployment:
+
+- `OWNER_PASSWORD` — dashboard password (stored only as a scrypt hash). Without it, only the master API token can sign in.
+- `SECRET_KEY` — encrypts connector credentials at rest. Rotating it invalidates stored connector tokens.
+
+The monitoring collector runs inside the API process; no extra service is needed. Keep `HTTP_CHECK_ALLOW_PRIVATE=false` outside local development and set `COOKIE_SECURE=true` only behind TLS. Railway service resources were not changed by this work.

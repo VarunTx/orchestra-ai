@@ -152,10 +152,14 @@ function Dag({
 
 export default function ControlPlane({
   environment,
+  embedded = false,
+  initialView,
 }: {
   environment: "local" | "hosted";
+  embedded?: boolean;
+  initialView?: string;
 }) {
-  const [view, setView] = useState("Overview");
+  const [view, setView] = useState(initialView ?? "Overview");
   const [auth, setAuth] = useState<boolean | null>(null);
   const [token, setToken] = useState("");
   const [definitions, setDefinitions] = useState<Definition[]>([]);
@@ -289,7 +293,10 @@ export default function ControlPlane({
     e.preventDefault();
     setBusy(true);
     try {
-      await api("session", { method: "POST", body: JSON.stringify({ token }) });
+      await api("session", {
+        method: "POST",
+        body: JSON.stringify({ credential: token }),
+      });
       setToken("");
       await refresh();
     } catch (e) {
@@ -358,7 +365,16 @@ export default function ControlPlane({
     setFilter("ALL");
     setSearch("");
   }
-  if (auth === false)
+  if (auth === false) {
+    if (embedded)
+      return (
+        <main className="content">
+          <div className="error-banner" role="alert">
+            <strong>Session expired</strong>
+            <span>Reload the page and sign in again to inspect executions.</span>
+          </div>
+        </main>
+      );
     return (
       <main className="login">
         <div className="login-art">
@@ -397,7 +413,7 @@ export default function ControlPlane({
             stays in an HTTP-only cookie.
           </p>
           <form onSubmit={login}>
-            <label htmlFor="token">Workspace token</label>
+            <label htmlFor="token">Owner password or API token</label>
             <input
               id="token"
               type="password"
@@ -405,7 +421,7 @@ export default function ControlPlane({
               required
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="Enter CONTROL_PLANE_TOKEN"
+              placeholder="Enter OWNER_PASSWORD or CONTROL_PLANE_TOKEN"
             />
             {error && (
               <p role="alert" className="error-text">
@@ -426,8 +442,10 @@ export default function ControlPlane({
         </section>
       </main>
     );
+  }
   return (
-    <div className="shell">
+    <div className={embedded ? "shell embedded" : "shell"}>
+      {!embedded && (
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="Orchestra AI home">
           <span className="brand-icon">
@@ -513,7 +531,9 @@ export default function ControlPlane({
           <LogOut size={14} /> Sign out
         </button>
       </aside>
+      )}
       <div className="main-shell">
+        {!embedded && (
         <header className="topbar">
           <div>
             <span>Workspace</span>
@@ -530,7 +550,25 @@ export default function ControlPlane({
             <span className="avatar">OA</span>
           </div>
         </header>
+        )}
         <main className="content">
+          {embedded && (
+            <div className="toolbar" style={{ marginBottom: 14 }}>
+              {["Overview", "Workflows", "Executions", "Infrastructure"].map((name) => (
+                <button
+                  key={name}
+                  className={
+                    view === name
+                      ? "button button-primary button-small"
+                      : "button button-outline button-small"
+                  }
+                  onClick={() => navigate(name)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="page-heading">
             <div>
               <div className="eyebrow">

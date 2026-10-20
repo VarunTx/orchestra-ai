@@ -1,89 +1,152 @@
 # Architecture
 
-Reference for the code as it exists today. Where behavior is uncertain or unprobed, this document says so instead of guessing. See `docs/PROGRESS.md` for verified milestones and `docs/RAILWAY.md` for the deployed trial stack.
+Reference for the code as it exists today. Where behaviour is uncertain or unverified, this document says so. See `docs/PROGRESS.md` for verified milestones and `docs/RAILWAY.md` for the deployed trial stack.
 
 ## Topology (Docker Compose)
 
 | Service | Image / runtime | Listener | Role |
 | --- | --- | --- | --- |
-| `web` | Next.js 16.4.2 on Node 22.18 (standalone build) | `127.0.0.1:3000` | Dashboard UI and the only public entry point |
-| `api` | FastAPI on Python 3.11 | `127.0.0.1:8000` | Authenticated gateway, no orchestration logic |
+| `web` | Next.js 16.4.2 on Node 22.18 (standalone) | `127.0.0.1:3000` | Dashboard and the only public entry point |
+| `api` | FastAPI on Python 3.11 | `127.0.0.1:8000` | Authenticated gateway, resource API **and the monitoring collector** |
 | `workers` | Same image, `python -m app.workers` | none | Official `conductor-python` TaskHandler polling |
 | `conductor` | `conductoross/conductor` pinned by digest | `:8080`, private network | Sole orchestration engine |
-| `postgres` | `postgres:16.6-alpine` | private network | Conductor persistence |
+| `postgres` | `postgres:16.6-alpine` | private network | Two databases: `conductor` (engine) and `orchestra` (platform) |
 
-Conductor and PostgreSQL are never published to the host in Compose. `docker compose down` keeps the named volume `orchestra-ai_postgres_data`.
+The platform database is created on first API startup and migrated from `backend/app/migrations/`. It never lives inside Conductor's schema, so engine upgrades and platform migrations are independent.
 
-## Request flow
+## Layers
 
-1. Browser (`frontend/components/control-plane.tsx`) calls only its own origin: `/api/session` and `/api/<segment>/...`.
-2. `frontend/app/api/session/route.ts` validates the entered token against the API and, on success, stores it in the `cp_session` cookie (`httpOnly`, `sameSite: strict`, `secure` on HTTPS, 8 h).
-3. `frontend/app/api/[...path]/route.ts` proxies `workflows`, `executions` and `infrastructure` only. It rejects unknown segments (404), rejects non-GET requests whose `Origin` is not in the pinned allowlist (403), reads the token from the cookie, and forwards it as a bearer token with a 45 s timeout.
-4. `backend/app/main.py` authenticates every route with `hmac.compare_digest` against `CONTROL_PLANE_TOKEN` (constant-time, 401 + `WWW-Authenticate` otherwise). Responses set `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
-5. `backend/app/engine.py` is the only Conductor client: base URL `CONDUCTOR_URL`, 12 s timeout, up to 3 attempts for `GET`, exactly 1 attempt for mutations, HTTP 5xx mapped to 502/503.
-6. Conductor schedules tasks; workers long-poll, execute, and return task output. All state, retries and history live in Conductor + PostgreSQL.
+```
+Browser → Next.js route handlers → FastAPI → Conductor REST → workers
+                                  ↘ orchestra database (projects, services, observations…)
+Collector (inside FastAPI) → HTTP health checks → orchestra database → incidents → webhooks
+```
 
-The frontend holds no server-side session store; each request re-reads the cookie. The overview polls every 5 s, the open execution detail every 3 s.
+### Request path
 
-## Workflows and tasks
+1. Browser code (`components/pages/*`, `components/app-shell.tsx`) calls only its own origin.
+2. `app/api/session/route.ts` exchanges the owner password or master API token for an opaque session token and stores it in `cp_session` (`httpOnly`, `sameSite: strict`, `secure` when configured, 8 h).
+3. `app/api/[...path]/route.ts` proxies an explicit allowlist of resource segments (`projects`, `services`, `clusters`, `environments`, `deployments`, `incidents`, `alerts`, `connectors`, `dashboard`, `audit`, `settings`, `schedules`, plus the legacy `workflows`/`executions`/`infrastructure`). Unknown segments return 404. Non-GET requests require an exact `Origin` from `APP_ORIGINS`.
+4. `api_resources.py` validates input with Pydantic (`extra='forbid'`, bounds, enums) and delegates to `store.py`.
+5. `engine.py` is Conductor's only client: 12 s timeout, up to 3 attempts for `GET`, exactly 1 for mutations, HTTP 5xx mapped to 502/503.
 
-Both workflows are `version: 1`, `schemaVersion: 2`, `restartable: true`, workflow timeout 600 s, and share the shape `normalize → analyze → report`:
+### Authentication
+
+- `auth.py` accepts either the master token (constant-time compare) or a session token whose SHA-256 is stored in `sessions`.
+- Sessions are revoked on sign-out and expire after `SESSION_TTL_HOURS`; expired rows are pruned.
+- The owner password is stored only as a scrypt hash (`app_settings.owner_password_hash`), re-derived when `OWNER_PASSWORD` changes.
+- Login attempts are rate-limited per client address inside the process.
+- No credential is ever placed in the browser bundle, HTML or `localStorage`.
+
+### Monitoring collector
+
+`monitor.py` runs as an asyncio task inside the API process (`MONITOR_ENABLED=true`):
+
+- Every `MONITOR_TICK_SECONDS` it takes a PostgreSQL advisory lock, selects services whose `last_checked_at + interval <= now()`, and probes them with bounded concurrency.
+- A probe is a `GET` with `follow_redirects=False`, a hard timeout and a 2 KB body cap. Targeted URLs pass `security.resolve_public`, which rejects non-HTTP(S), embedded credentials, and hosts resolving to loopback/private/link-local/reserved addresses unless `HTTP_CHECK_ALLOW_PRIVATE=true`.
+- Outcomes: expected status → `healthy`; unexpected 2xx → `degraded`; other status or transport failure → `down`; unusable target or DNS failure → `unknown`.
+- `unknown` never changes a service's status and never opens an incident — a monitoring gap is not an outage.
+- Status transitions apply `failure_threshold`/`recovery_threshold`, open one incident per service, resolve it on recovery, and recompute the project's aggregate status.
+- Pruning removes old observations, excess per-service history and expired sessions.
+
+Conductor is not used as the polling scheduler: checks are per-service and dynamic, and the scheduler would require a registered workflow per configuration change. Conductor remains responsible for durable diagnostic workflows; the collector performs collection only.
+
+### Incidents and alerts
+
+- `incidents` has a partial unique index on `(service_id) WHERE resolved_at IS NULL`, so a continuing failure cannot create duplicates.
+- `incident_events` is an append-only trail (opened, acknowledged, note, resolved) with actor attribution.
+- `alerts` store sealed webhook targets; delivery is attempted only when severity and cooldown allow, and every attempt is recorded in `notifications`.
+- Webhook targets are SSRF-checked at send time; a rejected target is recorded as a failed delivery.
+
+### Connectors
+
+`connectors.py` defines typed adapters:
+
+| Adapter | API | Notes |
+| --- | --- | --- |
+| `RailwayConnector` | GraphQL `backboard.railway.app/graphql/v2` | `me.projects.services` inventory; no per-service health. Unverified without a real token. |
+| `GitHubConnector` | REST `api.github.com` | Repo metadata, commits, workflow runs → deployment events. Rate-limit aware. |
+| Docker agent | Inbound `POST /api/agent/observations` | Token-authenticated per connector; services linked by `external_ref.agentKey`. |
+
+Credentials are AES-GCM sealed with a key derived from `SECRET_KEY` (HKDF-SHA256), and are never serialized into responses. Rotation re-seals the value and keeps the old one unreadable.
+
+### Data model (platform database)
+
+`clusters`, `projects`, `environments`, `services`, `deployments`, `connectors`, `observations`, `incidents`, `incident_events`, `alerts`, `notifications`, `audit_log`, `sessions`, `app_settings` and `schema_migrations`.
+
+`services.current_status`, `consecutive_failures` and `last_checked_at` are denormalised so dashboards stay cheap; every status is traceable to observation rows that carry `source` and `observed_at`.
+
+## Conductor workflows and tasks
+
+Both managed workflows are `version: 1`, `schemaVersion: 2`, `restartable: true`, workflow timeout 600 s, and share the shape `normalize → analyze → report`:
 
 | Workflow | Middle task | Provider |
 | --- | --- | --- |
 | `incident_analysis` | `cp_analyze_incident` | Gemini (`gemini-2.5-flash` by default) |
 | `diagnostic_pipeline` | `cp_diagnose_incident` | Deterministic keyword analysis |
 
-Task definitions (`backend/app/definitions.py`): `timeoutSeconds` 90, `responseTimeoutSeconds` 75, `timeoutPolicy: RETRY`, `retryCount` 2 with fixed 3 s delay — except `cp_analyze_incident`, which has `retryCount: 0` so an ambiguous failure never becomes a second billable call.
+Task definitions: `timeoutSeconds` 90, `responseTimeoutSeconds` 75, `timeoutPolicy: RETRY`, `retryCount` 2 with a fixed 3 s delay — except `cp_analyze_incident`, which has `retryCount: 0` so an ambiguous failure never becomes a second billable call.
 
-`backend/app/workers.py`:
+`workers.py`:
 
 | Task | Work | Idempotency |
 | --- | --- | --- |
-| `cp_normalize_incident` | Validates and trims evidence, counts lines, hashes evidence (`sha256`) | Pure |
-| `cp_diagnose_incident` | Keyword scan over evidence, honours diagnostic failure/delay injection | Pure; no external writes |
-| `cp_analyze_incident` | One Gemini request with a JSON response schema; failures surface only type + HTTP status | Pure, but billable |
+| `cp_normalize_incident` | Validates and trims evidence, counts lines, hashes evidence | Pure |
+| `cp_diagnose_incident` | Keyword scan, honours diagnostic failure/delay injection | Pure; no external writes |
+| `cp_analyze_incident` | One Gemini request with a JSON schema; failures surface only type + HTTP status | Pure, but billable |
 | `cp_publish_report` | Assembles the report with `generated_at` and `requires_human_review: true` | Pure |
 
-Definitions are installed by the API lifespan hook on startup (idempotent `POST metadata/taskdefs`, `PUT metadata/workflow`, retried for 180 s on 502/503). Startup fails if registration cannot complete.
+Definitions are installed by the API lifespan hook (idempotent `POST metadata/taskdefs`, `PUT metadata/workflow`), retried for 180 s on 502/503. Startup fails if registration cannot complete. The engine-wide catalog is read-only; arbitrary definitions are never accepted from the browser.
 
 ## API surface
 
-| Route | Behavior |
+| Route | Behaviour |
 | --- | --- |
+| `POST /api/session` | Password/token → opaque session token (rate-limited) |
+| `GET/DELETE /api/session` | Session check; revoke |
+| `GET /api/dashboard` | Aggregates, attention list, incidents, deployments, stale checks, failed executions |
+| `GET/POST /api/projects`, `GET/PATCH/DELETE /api/projects/{id}` | Project CRUD with nested environments/services on create |
+| `POST /api/projects/{id}/environments`, `DELETE /api/environments/{id}` | Environments |
+| `GET/POST /api/services`, `GET/PATCH/DELETE /api/services/{id}` | Service CRUD |
+| `GET /api/services/{id}/observations`, `POST /api/services/{id}/check` | History; immediate real check |
+| `GET/POST /api/clusters`, `PATCH/DELETE /api/clusters/{id}` | Clusters |
+| `GET /api/deployments`, `POST /api/deployments` | Deployment history and recording |
+| `GET /api/incidents`, `GET /api/incidents/{id}`, `…/acknowledge`, `…/resolve`, `…/notes` | Incident workflow |
+| `GET/POST /api/alerts`, `DELETE /api/alerts/{id}` | Webhook alerts |
+| `GET/POST /api/connectors`, `PATCH/DELETE /api/connectors/{id}`, `…/validate`, `…/sync` | Connector lifecycle |
+| `POST /api/agent/observations` | Agent ingest (connector token, not an owner session) |
+| `GET /api/audit`, `GET /api/settings` | Audit trail, read-only runtime configuration |
+| `GET /api/workflows`, `GET /api/workflows/catalog`, `GET /api/schedules` | Managed definitions, engine-wide catalog, read-only schedules |
+| `POST /api/executions`, `GET /api/executions`, `GET /api/executions/{id}`, `…/retry`, `…/terminate` | Execution operations |
+| `GET /api/infrastructure` | Engine latency, worker poll ages, Gemini state, real database probe |
 | `GET /healthz` | Unauthenticated liveness |
-| `GET /api/session` | Token check used by the login form |
-| `GET /api/workflows` | Conductor definitions filtered to the two managed workflows |
-| `POST /api/executions` | Validated start (`extra='forbid'`, bounded fields); Gemini workflows return 409 when disabled; failure injection restricted to diagnostics |
-| `GET /api/executions` | Conductor search restricted to the two managed types, `size` 1–100 |
-| `GET /api/executions/{id}` | Execution plus tasks; 404 for unmanaged workflow types |
-| `POST /api/executions/{id}/retry` | Only `FAILED`/`TIMED_OUT` |
-| `POST /api/executions/{id}/terminate` | Only `RUNNING`/`PAUSED` |
-| `GET /api/infrastructure` | Engine reachability and latency, worker poll ages, Gemini and storage status |
 
 ## Trust boundaries and limits
 
-- **Single tenant, single credential.** One shared token grants access to every execution of the two managed workflows. There is no per-user identity, no role model and no tenant field; `owned_execution` filters by workflow type, not by owner.
-- **Untrusted data.** Incident logs, task inputs/outputs and workflow history are untrusted content and may contain instructions. They are prompt data only and must never drive control flow.
-- **Honest telemetry.** `/api/infrastructure` reports `storage` as `not independently probed`; worker state is derived from Conductor poll timestamps and is `unavailable`/`unknown` when absent. No synthetic metrics are produced.
-- **AI is off by default.** `ENABLE_GEMINI=false` unless explicitly enabled with a key; the API and the analysis worker both refuse to run otherwise.
+- **Single tenant, single owner.** One credential grants access to everything. `owned_execution` filters by managed workflow type, not by owner.
+- **Untrusted data.** Incident logs, task input/output, provider payloads and observation messages are untrusted content. They are displayed and passed as prompt data only; never executed.
+- **Honest telemetry.** No synthetic CPU, memory, uptime or cost metrics exist. Provider silence renders as unknown.
+- **Conductor is the source of truth** for execution state; the platform never caches or rewrites it.
 
 ## Configuration
 
 | Variable | Consumer | Notes |
 | --- | --- | --- |
-| `CONTROL_PLANE_TOKEN` | api | ≥32 characters; generated by `scripts/setup_env.py` |
+| `CONTROL_PLANE_TOKEN` | api | ≥32 chars; master token for scripts |
+| `OWNER_PASSWORD` | api | Dashboard password; hashed at rest |
+| `SECRET_KEY` | api | Connector credential encryption key |
 | `POSTGRES_PASSWORD` | postgres, conductor | Required by Compose |
-| `CONDUCTOR_URL` / `CONDUCTOR_HOST` | api, workers | Compose sets `http://conductor:8080/api` |
-| `API_URL` / `API_HOST` | web | Server-only; never bundled |
-| `APP_ORIGINS` | web | Exact origin allowlist for mutations and cookies |
-| `COOKIE_SECURE` | web | `true` for HTTPS deployments |
+| `DATABASE_NAME`/`DATABASE_URL` | api | Platform database (default `orchestra`) |
+| `CONDUCTOR_URL` | api, workers | `http://conductor:8080/api` in Compose |
+| `API_URL` | web | Server-only; never bundled |
+| `APP_ORIGINS`, `COOKIE_SECURE` | web | Origin allowlist and cookie security |
+| `MONITOR_ENABLED`, `MONITOR_TICK_SECONDS`, `MONITOR_CONCURRENCY`, `MONITOR_RETENTION_DAYS` | api | Collector |
+| `HTTP_CHECK_ALLOW_PRIVATE` | api | Development-only private targets |
 | `ENABLE_GEMINI`, `GEMINI_API_KEY`, `GEMINI_MODEL` | api, workers | Billable; disabled by default |
-
-`.env` is git-ignored; `.env.example` documents the shape without secrets.
 
 ## Operating and verifying
 
-- `make up` builds and waits for the stack; `make test` runs pytest and the type check; `make smoke` exercises the real engine; `make browser` runs Playwright; `make recovery` is destructive and local-only.
-- CI (`.github/workflows/ci.yml`) runs pytest, `npm ci`, type check, Compose up, `scripts/smoke.py`, Playwright and `scripts/recovery.py`, then tears the stack down.
-- The Railway trial deployment runs the same five services with only the dashboard public; see `docs/RAILWAY.md`. Never run recovery tests there.
+- `make up` builds and waits for the stack; `make test-db` runs the complete backend suite in the Compose network; `make typecheck`, `make build`, `make browser`, `make smoke`.
+- `scripts/docker_agent.py` pushes local container health from a machine that owns Docker.
+- `scripts/smoke.py` exercises the real engine; `scripts/recovery.py` is destructive and local-only.
+- CI runs typecheck, build, Compose up, backend tests, smoke, Playwright and recovery, then tears the stack down.

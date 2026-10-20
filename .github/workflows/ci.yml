@@ -7,27 +7,27 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
       - uses: actions/setup-node@v4
         with:
           node-version: '22.18.0'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: pip install -r backend/requirements.txt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - run: python scripts/setup_env.py
-      - run: PYTHONPATH=backend pytest backend/tests -q
       - run: npm ci
         working-directory: frontend
       - run: npm run typecheck
         working-directory: frontend
-      - run: docker compose up -d --build --wait --wait-timeout 180
+      - run: npm run build
+        working-directory: frontend
+      - run: docker compose up -d --build --wait --wait-timeout 240
+      # The API and tests share the private Compose network; the database is never published.
+      - run: docker compose run --rm --no-deps -v "${{ github.workspace }}/backend:/app" api python -m pytest tests -q
       - run: python scripts/smoke.py
       - run: npx playwright install --with-deps chromium
         working-directory: frontend

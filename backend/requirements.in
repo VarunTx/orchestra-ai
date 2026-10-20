@@ -4,4 +4,5 @@ httpx
 pydantic-settings
 conductor-python
 google-genai
+psycopg[binary,pool]
 pytest

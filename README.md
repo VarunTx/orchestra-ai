@@ -1,133 +1,137 @@
 # Orchestra AI
 
-A Python-first AI orchestration workspace powered by **the actual Conductor OSS engine**. Run workflows, inspect their DAG and task attempts, investigate failures, and observe SDK worker polls through a polished Next.js dashboard.
+A self-hostable **personal developer control plane** for the projects you build. Register projects, environments, services and clusters; watch real health checks and incidents; and operate durable Conductor workflows — all from one dashboard, for one owner.
 
 ![Live overview](docs/screenshots/overview.png)
 
+Conductor OSS remains the only workflow engine. Orchestra AI adds an application-owned inventory, monitoring and incident layer around it; it never re-implements scheduling, retries or execution state.
+
+## What works today
+
+- **Project inventory**: projects → environments → services, plus logical clusters and deployments, persisted in an application-owned PostgreSQL database with migrations.
+- **Real monitoring**: an in-process collector performs HTTP health checks on each service's own interval, records bounded observation history with source and timestamp, and applies failure/recovery thresholds. It keeps running with the dashboard closed.
+- **Incidents**: automatic open/deduplicate/auto-resolve, acknowledgment, notes, manual resolution and evidence snapshots from the triggering check.
+- **Alerts**: webhook delivery with severity filters, cooldowns and per-delivery records. Nothing is sent until you configure an explicit target.
+- **Integrations**: Railway (GraphQL inventory), GitHub (repository, commits, workflow runs → deployments) and an agent-ingest path for local Docker. Credentials are sealed with AES-GCM and never returned to the browser.
+- **Conductor operations**: execution history and filtering, task timelines, failed-task inspection, worker polling, manual retry/termination, definition browser, engine-wide definition catalog and a read-only schedule view.
+- **Deterministic diagnostics**: start the existing `diagnostic_pipeline` from any incident; its evidence summary is passed as untrusted input.
+- **Single-owner auth**: password or master API token exchanged for an opaque, HTTP-only, server-side session. Sessions are revocable; the master token never reaches the browser.
+- **Honest telemetry**: unknown stays unknown. If a provider or a check cannot produce evidence, the service is not reported as down.
+
 ## Start locally
 
-Requirements: Docker Engine/Desktop with Compose v2, approximately 4 GB available memory, and Python 3 for secret generation. Node and Python dependencies are installed inside the images.
+Requirements: Docker with Compose v2, ~4 GB free memory, and Python 3 for secret generation.
 
 ```sh
-python3 scripts/setup_env.py
-docker compose up -d --build --wait --wait-timeout 180
+python3 scripts/setup_env.py      # writes a private .env with tokens and an owner password
+docker compose up -d --build --wait --wait-timeout 240
 ```
 
-Open **http://localhost:3000**. Copy the `CONTROL_PLANE_TOKEN` value from `.env` into the sign-in form. The generated file has private permissions and is ignored by Git. The browser session uses an HTTP-only, same-site cookie; credentials are never compiled into the frontend bundle.
+Open **http://localhost:3000** and sign in with `OWNER_PASSWORD` (or `CONTROL_PLANE_TOKEN`) from `.env`.
 
-Only the dashboard (`127.0.0.1:3000`) and authenticated gateway (`127.0.0.1:8000`) are exposed on the host. Conductor and PostgreSQL stay on the private Compose network. The engine stores definitions, queues, execution state, and searchable history in PostgreSQL's named volume. `docker compose down` preserves that volume.
+Only the dashboard (`127.0.0.1:3000`) and the authenticated API (`127.0.0.1:8000`) are published. Conductor and PostgreSQL stay on the private Compose network; the application database is created automatically inside the same PostgreSQL instance but in its **own database**, separate from Conductor's schema.
 
-Choose **Run workflow → Diagnostic pipeline** to execute a real workflow without any provider credentials. The prefilled evidence is explicitly synthetic. Choose **Fail once** to see a failed attempt followed by a successful retry; **Exhaust retries** produces a genuine failed execution.
+## Register your first project
 
-## What is implemented
+1. **Projects → Add project**: name, description, cluster, optional GitHub repository.
+2. Choose environments (development / staging / production).
+3. Add a service with a health endpoint. The first check runs immediately; subsequent checks follow the interval.
+4. Open the project to inspect status, trigger a check, disable monitoring or move the project to another cluster.
 
-- Overview with counts scoped to the latest 20 executions, registered definitions, and actual recent worker polls.
-- Versioned definition explorer with a three-step sequential DAG and full definition JSON.
-- Real execution start, status filtering, pagination, live task timeline, input/output inspection, manual retry and termination.
-- Official `conductor-python` workers for normalization, deterministic diagnostics, Gemini analysis, and report assembly.
-- Structured AI incident reports with evidence, likely cause, recommended actions and confidence. Reports always require human review.
-- Explicit unknown/unavailable/configured service states. No fake CPU, cluster, throughput or provider-health metrics.
-- Validated and authenticated management API; bounded timeouts and retries; persistent workflow history.
-- Container builds, unit/API tests, real-engine smoke/recovery tests, Playwright browser tests, and GitHub Actions.
+A project without health URLs stays explicitly `unknown` — it is never guessed healthy.
 
-## Gemini configuration
+## Monitoring behaviour
 
-Set these values in the ignored `.env` file, then recreate the API and workers:
+- Checks are `GET` requests with a per-service timeout; redirects are **not** followed.
+- SSRF protection rejects loopback, private, link-local and unresolvable targets, credential-bearing URLs and plain HTTP unless `HTTP_CHECK_ALLOW_PRIVATE=true` is set deliberately for local development.
+- A check that cannot be performed (blocked target, DNS failure) is recorded as `unknown` and never creates an incident.
+- A real failure becomes `down` (or `degraded` for an unexpected 2xx) only after `failure_threshold` consecutive failures. Recovery needs `recovery_threshold` successes.
+- One active incident per service; recovery resolves it automatically with an event trail.
+- Observations are pruned by age (`MONITOR_RETENTION_DAYS`) and per-service count, plus expired sessions.
+- A PostgreSQL advisory lock guarantees only one collector ticks at a time, even with multiple API replicas.
 
-```dotenv
-GEMINI_API_KEY=your-google-ai-studio-api-key
-GEMINI_MODEL=gemini-2.5-flash
-ENABLE_GEMINI=true
-```
-
-```sh
-docker compose up -d api workers
-```
-
-The model is configurable because model availability and account permissions vary. Running `incident_analysis` sends the submitted evidence to Google and can incur API costs. Enable it only when authorized. `scripts/gemini_smoke.py` starts exactly one synthetic incident workflow and is deliberately excluded from normal tests and CI.
-
-**Current verification limit:** one authorized live Gemini test was attempted. The provider returned a `ClientError`; the task failed and the dashboard records that real failure. No successful Gemini output has been verified. The error response was sanitized, so the exact credential/model/quota cause was not retained. Gemini is disabled again in the local environment. The structured-output and error-sanitization paths pass mocked unit tests; those tests are not evidence of live provider success.
-
-## Architecture
-
-```mermaid
-flowchart LR
-  Browser[Browser] -->|HTTP-only session| Web[Next.js server]
-  Web -->|Bearer token| API[FastAPI gateway]
-  API -->|REST: definitions / execution / health| Engine[Conductor OSS]
-  Engine --> DB[(PostgreSQL)]
-  Workers[Python / official SDK workers] -->|poll / task results| Engine
-  Workers -->|authorized evidence / structured result| Gemini[Gemini API]
-```
-
-Conductor is the sole scheduler. FastAPI registers the two versioned workflow definitions at startup and proxies controlled management operations. Python workers poll and report task results using the official SDK. The Next.js server forwards the session token to FastAPI; it holds no Gemini key. The DAG represents the actual registered sequential definitions, with execution states overlaid from Conductor.
+## Conductor workflows
 
 | Workflow | Tasks | External API |
 |---|---|---|
 | `diagnostic_pipeline` v1 | Normalize → deterministic diagnostics → report | None |
 | `incident_analysis` v1 | Normalize → Gemini analysis → report | Google Gemini |
 
-Task retries are capped at two for deterministic workers, with a 3-second delay, a 75-second response timeout and a 90-second task timeout. Workflow timeout is 600 seconds. Gemini has **zero automatic task retries** and one SDK HTTP attempt to avoid silently repeating billable calls. A manual retry is still an explicit operator action. Conductor uses at-least-once delivery; future side-effecting workers must implement idempotency.
+Task retries are capped at two for deterministic workers (3 s delay, 75 s response timeout, 90 s task timeout, 600 s workflow timeout). Gemini has **zero automatic retries** and a single HTTP attempt so an ambiguous failure never becomes a second billable call.
 
-The API retries only reads. It does not automatically retry starts or other mutations after an ambiguous response. Before manually resubmitting a timed-out start, inspect execution history to avoid duplicate runs.
+Definitions are registered by the API at startup. Arbitrary user-supplied definitions are deliberately **not** accepted from the browser: adding one requires reviewed backend code.
 
-## Development and tests
+## Integrations
 
-Use Python 3.11 and Node 22.18+:
+| Provider | What it does | Status |
+|---|---|---|
+| Railway | Reads project/service/environment inventory with a project or account token (`backboard.railway.app/graphql/v2`) | Implemented; the inventory query is unverified without a real token, and Railway exposes no per-service health through it |
+| GitHub | Repository metadata, recent commits and workflow runs become deployment events | Implemented with optional token (public repos work anonymously) |
+| Docker agent | `scripts/docker_agent.py` reads `docker ps` locally and pushes observations with a connector token | Implemented; the platform never reaches into your machine |
+| HTTP | Native HTTP checks for any service | Implemented |
+| Render / Vercel / Kubernetes | Adapter interface only | Not implemented — no pretend integrations |
+
+Credentials are encrypted with a key derived from `SECRET_KEY` (or the control-plane token if unset). Rotating that key invalidates stored connector credentials; re-enter them afterwards.
+
+## Verification
 
 ```sh
-python3.11 -m venv .venv
-.venv/bin/pip install -r backend/requirements.txt
-npm --prefix frontend ci
-PYTHONPATH=backend .venv/bin/pytest backend/tests -q
-npm --prefix frontend run typecheck
-npm --prefix frontend run build
+make test-db      # complete backend suite inside the Compose network (26 tests)
+make typecheck
+make build
+make browser      # 3 Playwright tests against the live stack
+make smoke        # real Conductor executions, retries, termination
 ```
 
-With Compose running:
+`make test` runs the same suite on the host; database-backed tests then report as **skipped** with an explicit reason instead of silently passing.
 
-```sh
-.venv/bin/python scripts/smoke.py
-cd frontend
-npx playwright install chromium
-npm run test:e2e
-cd ..
-.venv/bin/python scripts/recovery.py
-```
+The backend suite includes an end-to-end cycle on deterministic local infrastructure: register project → register service → observe healthy → simulate a failing check → incident created → inspect evidence → restore health → automatic recovery and resolution. It also covers SSRF rejection, secret sealing, credential redaction, alert deduplication and cooldowns, connector token rotation and agent authentication.
 
-The smoke suite creates real executions and tests success, fail-once recovery, exhaustion, manual retry, termination, and search filtering. Recovery tests deliberately stop/kill **this Compose project's workers**, recover queued/in-flight tasks, and restart Conductor to verify persistent history. Do not run these tests against a shared production stack. They never call Gemini.
+`scripts/recovery.py` is destructive and local-Compose-only. Never run it against Railway or any shared stack.
 
-Browser tests cover authentication/origin checks, a real retrying execution, task inspection, definition JSON/graph, worker observations, mobile overflow, and page errors. Screenshots are captured from the live stack, not fixture data. Traces are disabled to avoid recording session credentials. Generated reports and `.env` are excluded from Git.
+## Configuration
 
-For local UI iteration, stop only the containerized frontend with `docker compose stop web`, then use `npm --prefix frontend run dev`. It proxies to the API on port 8000. Resume the container with `docker compose start web` when finished.
+| Variable | Purpose |
+|---|---|
+| `CONTROL_PLANE_TOKEN` | Master API token for scripts/CI (never sent to the browser) |
+| `OWNER_PASSWORD` | Dashboard password; empty disables password login |
+| `SECRET_KEY` | Encrypts connector credentials at rest |
+| `POSTGRES_PASSWORD` | PostgreSQL password (shared with Conductor in Compose) |
+| `DATABASE_NAME` / `DATABASE_URL` | Application database (default `orchestra`) |
+| `MONITOR_ENABLED`, `MONITOR_TICK_SECONDS`, `MONITOR_RETENTION_DAYS` | Collector behaviour |
+| `HTTP_CHECK_ALLOW_PRIVATE` | Allow private targets in checks (local development only) |
+| `APP_ORIGINS`, `COOKIE_SECURE` | Exact browser origins and secure cookies behind TLS |
+| `ENABLE_GEMINI`, `GEMINI_API_KEY`, `GEMINI_MODEL` | Optional paid analysis, disabled by default |
 
-## Operations and deployment
+`.env` is git-ignored; `.env.example` documents the shape without secrets.
 
-See [deployment preparation](docs/DEPLOYMENT.md), [execution plan](docs/PLAN.md), and [verification progress](docs/PROGRESS.md).
+## Gemini (optional, disabled)
+
+`incident_analysis` runs only when `ENABLE_GEMINI=true` and a key are present; otherwise the API returns 409. Enabling it sends incident evidence to Google and can incur cost. **No successful live Gemini run has been verified** in this environment; the structured-output and error-sanitization paths are covered by tests only. Do not enable it without explicit approval.
+
+## Known limitations
+
+- Single owner, single workspace. There is no multi-tenancy, RBAC, SSO or billing — by design.
+- Logical clusters are groupings, not discovered Kubernetes/compute clusters. Provider-discovered infrastructure is not modelled yet.
+- Railway's inventory query is unverified without credentials, and provider-reported per-service health is not mapped to service status.
+- Alerts support webhooks only (email/Slack are extension points).
+- Workflow definitions cannot be registered from the UI; new definitions ship as reviewed code.
+- The collector runs inside the API process. Scaling the API horizontally is safe (advisory lock) but the collector is not a separate worker fleet.
+- Deployment is manual; no Railway resources were changed by this work.
+
+## Operations
 
 ```sh
 docker compose ps
-docker compose logs --tail 100 api workers
+docker compose logs --tail 100 api
 docker compose logs --tail 100 conductor
 ```
 
-A gateway liveness check is available at `/healthz`. Authenticated `/api/infrastructure` reports engine metadata reachability, recent queue poll observations and Gemini configuration. PostgreSQL is not separately probed by the dashboard; Compose health checks verify database readiness. An observed worker poll is not a guarantee of successful task execution.
-
-The Conductor image is pinned by digest; Python transitive dependencies and npm dependencies are locked. PostgreSQL and application runtime images use explicit versions. CI builds the complete Compose deployment and runs the same deterministic tests. The repository is now published privately at [VarunTx/orchestra-ai](https://github.com/VarunTx/orchestra-ai). GitHub Actions verification has started; see the repository Actions tab for its current result.
-
-## Scope and limitations
-
-This is a working single-workspace MVP, not a hosted multi-tenant platform. A shared admin token provides access to all managed execution input/output. There is no RBAC, SSO, audit-log service, workflow editor, arbitrary workflow import, secret redaction of operator-submitted logs, or automatic remediation. Keep sensitive incident data out of this demonstration deployment.
-
-Only the two managed workflows are exposed. The DAG renderer supports their sequential structure; it is not a general nested/fork graph editor. Overview counters explicitly describe their recent-execution window; server-side history filtering and pagination are available in Executions. No scheduled background provider calls are made.
-
-A successful live Gemini result remains blocked by provider access/configuration. No public deployment has been performed. The complete container stack has been built and tested locally; remote hosting, TLS, backups, access control and operational monitoring require deployment-specific configuration.
+`/healthz` is unauthenticated liveness. `/api/infrastructure` reports engine reachability/latency, worker poll ages, Gemini state and an actual database probe. See [architecture](docs/ARCHITECTURE.md), [deployment notes](docs/DEPLOYMENT.md) and [verification progress](docs/PROGRESS.md).
 
 ## Screenshots
 
+![Project detail with real service observations](docs/screenshots/project.png)
+![Incident evidence and timeline](docs/screenshots/incident.png)
 ![Task inspection after a real fail-once retry](docs/screenshots/execution.png)
 ![Real worker poll observations](docs/screenshots/infrastructure.png)
-
-## Official references
-
-Implementation checked against the [Conductor Python SDK](https://conductor-oss.github.io/conductor/documentation/clientsdks/python-sdk.html), [Conductor production/storage configuration](https://conductor-oss.github.io/conductor/devguide/running/deploy.html), [official Docker image](https://hub.docker.com/r/conductoross/conductor), and [Gemini SDK documentation](https://ai.google.dev/gemini-api/docs/get-started).

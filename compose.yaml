@@ -37,10 +37,14 @@ services:
     env_file: .env
     environment:
       CONDUCTOR_URL: http://conductor:8080/api
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
     ports:
       - '127.0.0.1:8000:8000'
     depends_on:
       conductor:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]

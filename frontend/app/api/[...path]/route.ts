@@ -7,7 +7,25 @@ async function proxy(
   ctx: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await ctx.params;
-  if (!["workflows", "executions", "infrastructure"].includes(path[0]))
+  // Explicit allowlist: new resource APIs must be added deliberately.
+  const allowed = new Set([
+    "workflows",
+    "executions",
+    "infrastructure",
+    "schedules",
+    "dashboard",
+    "projects",
+    "environments",
+    "clusters",
+    "services",
+    "deployments",
+    "incidents",
+    "alerts",
+    "connectors",
+    "audit",
+    "settings",
+  ]);
+  if (!allowed.has(path[0]))
     return NextResponse.json({ detail: "Not found" }, { status: 404 });
   if (req.method !== "GET" && !allowedOrigin(req))
     return NextResponse.json({ detail: "Invalid origin" }, { status: 403 });
@@ -45,4 +63,4 @@ async function proxy(
     );
   }
 }
-export { proxy as GET, proxy as POST };
+export { proxy as GET, proxy as POST, proxy as PATCH, proxy as DELETE };
