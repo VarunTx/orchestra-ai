@@ -1,8 +1,8 @@
 # Railway trial deployment
 
-Project: https://railway.com/project/68e2641a-a387-4bcf-9307-e25eadebe42f
+The maintainer's original Railway trial deployment is described here as a reference. It is not a supported hosted instance: Railway trials expire, and this configuration is superseded by the free-VM profile in `docs/DEPLOY_FREE.md`.
 
-Dashboard URL: https://web-production-95d5e.up.railway.app
+Substitute your own project ID and domain when following along; the identifiers from the maintainer's account are not reproduced here.
 
 The dashboard, API, official SDK workers, real Conductor engine and PostgreSQL run on Railway, independently of the local Mac. Check docs/PROGRESS.md for the latest verification status.
 

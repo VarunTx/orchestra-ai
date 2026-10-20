@@ -1,6 +1,6 @@
 # Orchestra AI
 
-A self-hostable **personal developer control plane** for the projects you build. Register projects, environments, services and clusters; watch real health checks and incidents; and operate durable Conductor workflows — all from one dashboard, for one owner.
+A free, open-source, self-hostable **personal developer control plane** for the projects you build. MIT licensed — run it for yourself, fork it, or contribute. Register projects, environments, services and clusters; watch real health checks and incidents; and operate durable Conductor workflows — all from one dashboard, for one owner.
 
 ![Live overview](docs/screenshots/overview.png)
 
@@ -170,6 +170,15 @@ docker compose logs --tail 100 conductor
 ```
 
 `/healthz` is unauthenticated liveness. `/api/infrastructure` reports engine reachability/latency, worker poll ages, Gemini state and an actual database probe. See [architecture](docs/ARCHITECTURE.md), [deployment notes](docs/DEPLOYMENT.md) and [verification progress](docs/PROGRESS.md).
+
+## Open source
+
+- **Licence:** [MIT](LICENSE) — use it, fork it, ship it.
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) — local setup, test commands and the rules that keep the project honest.
+- **Security:** [SECURITY.md](SECURITY.md) — threat model, hardening checklist and how to report a vulnerability privately.
+- **Deploy free:** [docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md) — one VM, open-source components, no trial credit.
+
+This is a single-owner tool by design: no multi-tenancy, no RBAC, no billing. The value is that one developer can register their projects, see real health, investigate incidents and operate Conductor workflows without paying for five hosting dashboards.
 
 ## Screenshots
 
