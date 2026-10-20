@@ -127,6 +127,7 @@ Definitions are installed by the API lifespan hook (idempotent `POST metadata/ta
 - **Untrusted data.** Incident logs, task input/output, provider payloads and observation messages are untrusted content. They are displayed and passed as prompt data only; never executed.
 - **Honest telemetry.** No synthetic CPU, memory, uptime or cost metrics exist. Provider silence renders as unknown.
 - **Conductor is the source of truth** for execution state; the platform never caches or rewrites it.
+- **SSRF residual risk.** Targets are resolved and checked immediately before each request, but the connection is made by hostname, so a DNS-rebinding attack between resolution and connection is theoretically possible. Redirects are not followed and targets are owner-configured, which bounds the exposure; pinning the resolved address would close it.
 
 ## Configuration
 

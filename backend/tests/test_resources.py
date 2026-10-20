@@ -337,3 +337,44 @@ def test_agent_ingest_requires_matching_token(allow_private):
     assert good.json()['status'] == 'healthy'
     history = client.get(f'/api/services/{service_id}/observations', headers=HEADERS).json()
     assert history[0]['source'] == 'agent'
+
+
+@requires_db
+def test_migrations_are_idempotent():
+    assert db.migrate() == []  # already applied; running again must be a no-op
+    assert db.one('SELECT count(*) AS applied FROM schema_migrations')['applied'] >= 1
+
+
+@requires_db
+def test_connector_validation_failure_is_recorded(monkeypatch):
+    from app.api_resources import RailwayConnector
+    from app.connectors import ConnectorError
+
+    created = client.post('/api/connectors', headers=HEADERS, json={
+        'provider': 'railway', 'name': 'Railway broken', 'token': 'railway-token-value',
+    }).json()
+
+    async def reject(self):
+        raise ConnectorError('Railway rejected the token (HTTP 401)')
+
+    monkeypatch.setattr(RailwayConnector, 'validate', reject)
+    response = client.post(f"/api/connectors/{created['id']}/validate", headers=HEADERS)
+    assert response.status_code == 502
+    assert 'rejected the token' in response.json()['detail']
+    stored = db.one('SELECT status, last_error FROM connectors WHERE id = %s', (created['id'],))
+    assert stored['status'] == 'error'
+    assert 'rejected the token' in stored['last_error']
+
+
+@requires_db
+def test_login_attempts_are_rate_limited():
+    from app.main import auth
+
+    auth.limiter._hits.clear()
+    statuses = [
+        client.post('/api/session', json={'credential': 'definitely-wrong-password'}).status_code
+        for _ in range(auth.limiter.limit + 2)
+    ]
+    assert statuses[0] == 401
+    assert statuses[-1] == 429
+    auth.limiter._hits.clear()

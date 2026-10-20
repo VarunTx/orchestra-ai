@@ -113,7 +113,7 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 
 ### Verified in this milestone (local Compose only)
 
-- `docker compose run --rm --no-deps -v backend:/app api python -m pytest tests -q` → **26 passed** (1 pre-existing Starlette deprecation warning). Includes the deterministic end-to-end cycle: register project → register service → healthy → failing check → incident with evidence → recovery → automatic resolution, plus SSRF, secret sealing, credential redaction, alert dedupe/cooldown, connector rotation and agent authentication.
+- `docker compose run --rm --no-deps -v backend:/app api python -m pytest tests -q` → **29 passed** (1 pre-existing Starlette deprecation warning). Includes the deterministic end-to-end cycle: register project → register service → healthy → failing check → incident with evidence → recovery → automatic resolution, plus SSRF, secret sealing, credential redaction, alert dedupe/cooldown, connector rotation and validation failure, migration idempotency, login rate limiting and agent authentication.
 - `npm --prefix frontend run typecheck` → clean; `npm --prefix frontend run build` → compiled, 17 routes.
 - `npm --prefix frontend run test:e2e` → **3 passed in 10.0 s** against the live stack: unauthenticated API/origin rejection; project registration, real check, incident and recovery through the UI; real Conductor fail-once execution, task inspection, definitions and worker polls; mobile layout without horizontal overflow.
 - `scripts/smoke.py` → PASS for success, fail-once retry, retry exhaustion, manual retry, termination and search filtering against the real engine.
