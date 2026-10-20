@@ -140,6 +140,8 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Verified backup and restore locally: both databases dumped (56 KB conductor, 16 KB orchestra), `gzip -t` passed, restore into `orchestra_restore` produced 1 project, 2 services and 1 migration row, then the drill database was dropped. No live data was touched.
 - Fixed a real responsive defect the new panels exposed: a wide table widened the page to 412 px at a 390 px viewport. `.content` now clips horizontal overflow so wide tables scroll inside `.table-scroll` instead of moving the page. The mobile Playwright assertion passes again, and `docs/screenshots/workflows.png` now captures the catalog plus engine telemetry.
 
+- Added controlled workflow-definition registration (`POST /api/workflows/definitions` + a validated editor on the Workflows page). Validation accepts only worker-backed `SIMPLE` tasks, rejects `HTTP`/`EVENT`/`SUB_WORKFLOW`, enforces unique reference names, bounds versions and inputs, and refuses to overwrite an existing name+version. Verified against the real engine: `manual_recheck` v1 registered, appeared in the catalog, a duplicate returned 409, and an `HTTP` task was rejected with 422.
+
 ### Decisions recorded
 
 - Railway is retained only as an existing demonstration; the documented target is one free VM (Oracle Always Free A1: 2 OCPU / 12 GB / 200 GB, verified against Oracle's current Always Free page). Tailscale (free) or Caddy + DuckDNS provide access without buying a domain. Render/Fly no longer offer a usable free always-on tier.

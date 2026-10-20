@@ -186,6 +186,20 @@ class ConnectorPatch(BaseModel):
     token: str | None = Field(default=None, min_length=8, max_length=500)
 
 
+SAFE_TASK_TYPES = {'SIMPLE'}
+SAFE_DEFINITION_KEYS = {
+    'name', 'version', 'schemaVersion', 'description', 'ownerEmail', 'timeoutPolicy',
+    'timeoutSeconds', 'restartable', 'inputParameters', 'outputParameters', 'tasks',
+}
+NAME = __import__('re').compile(r'^[a-z][a-z0-9_]{2,60}$')
+REFERENCE = __import__('re').compile(r'^[A-Za-z][A-Za-z0-9_]{0,40}$')
+
+
+class DefinitionIn(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    definition: dict
+
+
 class AgentObservationIn(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     agent_key: str = Field(min_length=1, max_length=80)
@@ -566,6 +580,71 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
         updated = store.apply_observation(service, observation)
         store.recompute_project_status(service['project_id'])
         return {'service_id': service['id'], 'status': updated['current_status']}
+
+    # -- controlled workflow registration ----------------------------------
+    def validate_definition(definition: dict) -> dict:
+        """Only safe, worker-backed SIMPLE workflows may be registered from the API.
+
+        HTTP/EVENT/SUB_WORKFLOW tasks are rejected so registration can never become an
+        SSRF or arbitrary-execution primitive.
+        """
+        from .definitions import TASK_NAMES
+
+        if not isinstance(definition, dict):
+            raise HTTPException(422, 'definition must be a JSON object')
+        unknown = set(definition) - SAFE_DEFINITION_KEYS
+        if unknown:
+            raise HTTPException(422, f'unsupported definition keys: {sorted(unknown)}')
+        name = definition.get('name')
+        if not isinstance(name, str) or not NAME.match(name):
+            raise HTTPException(422, 'name must be lowercase letters, digits or underscore')
+        if not isinstance(definition.get('version'), int) or not 1 <= definition['version'] <= 100:
+            raise HTTPException(422, 'version must be an integer between 1 and 100')
+        if definition.get('schemaVersion') != 2:
+            raise HTTPException(422, 'schemaVersion must be 2')
+        tasks = definition.get('tasks')
+        if not isinstance(tasks, list) or not 1 <= len(tasks) <= 25:
+            raise HTTPException(422, 'tasks must contain between 1 and 25 entries')
+        references = set()
+        for task in tasks:
+            if not isinstance(task, dict):
+                raise HTTPException(422, 'each task must be an object')
+            task_type = task.get('type', 'SIMPLE')
+            if task_type not in SAFE_TASK_TYPES:
+                raise HTTPException(422, f'task type {task_type!r} is not registrable here')
+            if task.get('name') not in TASK_NAMES:
+                raise HTTPException(
+                    422, f"task {task.get('name')!r} has no worker; only "
+                         f"{sorted(TASK_NAMES)} can run")
+            reference = task.get('taskReferenceName')
+            if not isinstance(reference, str) or not REFERENCE.match(reference) or reference in references:
+                raise HTTPException(422, 'taskReferenceName must be unique and alphanumeric')
+            references.add(reference)
+        parameters = definition.get('inputParameters', [])
+        if not isinstance(parameters, list) or len(parameters) > 20 or \
+                not all(isinstance(item, str) and NAME.match(item) for item in parameters):
+            raise HTTPException(422, 'inputParameters must be lowercase identifiers')
+        if not isinstance(definition.get('outputParameters', {}), dict):
+            raise HTTPException(422, 'outputParameters must be an object')
+        definition.setdefault('ownerEmail', 'operator@conductor.local')
+        definition.setdefault('restartable', True)
+        definition.setdefault('timeoutPolicy', 'TIME_OUT_WF')
+        definition.setdefault('timeoutSeconds', 600)
+        return definition
+
+    @router.post('/workflows/definitions', status_code=201, dependencies=[owner])
+    async def register_definition(body: DefinitionIn):
+        definition = validate_definition(body.definition)
+        catalog = await engine.request('GET', 'metadata/workflow')
+        for existing in catalog or []:
+            if existing.get('name') == definition['name'] and \
+                    existing.get('version') == definition['version']:
+                raise HTTPException(409, 'That name and version already exists; register a new version')
+        await engine.request('PUT', 'metadata/workflow', json=[definition])
+        store.audit('owner', 'workflow.register', 'workflow',
+                    f"{definition['name']}@{definition['version']}",
+                    {'tasks': [t['name'] for t in definition['tasks']]})
+        return {'registered': True, 'name': definition['name'], 'version': definition['version']}
 
     # -- audit and settings ------------------------------------------------
     @router.get('/audit', dependencies=[owner])

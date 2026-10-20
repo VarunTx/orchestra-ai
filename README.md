@@ -26,7 +26,7 @@ Orkes Conductor is the commercial product around an open-source engine. This pro
 - **Incidents**: automatic open/deduplicate/auto-resolve, acknowledgment, notes, manual resolution and evidence snapshots from the triggering check.
 - **Alerts**: webhook delivery with severity filters, cooldowns and per-delivery records. Nothing is sent until you configure an explicit target.
 - **Integrations**: Railway (GraphQL inventory), GitHub (repository, commits, workflow runs → deployments) and an agent-ingest path for local Docker. Credentials are sealed with AES-GCM and never returned to the browser.
-- **Conductor operations**: execution history and filtering, task timelines, failed-task inspection, worker polling, manual retry/termination, definition browser, engine-wide definition catalog and a read-only schedule view.
+- **Conductor operations**: execution history and filtering, task timelines, failed-task inspection, worker polling, manual retry/termination, definition browser, engine-wide catalog, a read-only schedule view, and **controlled definition registration** restricted to worker-backed SIMPLE tasks.
 - **Deterministic diagnostics**: start the existing `diagnostic_pipeline` from any incident; its evidence summary is passed as untrusted input.
 - **Single-owner auth**: password or master API token exchanged for an opaque, HTTP-only, server-side session. Sessions are revocable; the master token never reaches the browser.
 - **Honest telemetry**: unknown stays unknown. If a provider or a check cannot produce evidence, the service is not reported as down.
@@ -88,7 +88,7 @@ The dashboard reads that endpoint plus `/api/tasks/queue/size` and shows queue d
 
 Task retries are capped at two for deterministic workers (3 s delay, 75 s response timeout, 90 s task timeout, 600 s workflow timeout). Gemini has **zero automatic retries** and a single HTTP attempt so an ambiguous failure never becomes a second billable call.
 
-Definitions are registered by the API at startup. Arbitrary user-supplied definitions are deliberately **not** accepted from the browser: adding one requires reviewed backend code.
+Definitions are registered by the API at startup. Additional definitions can be registered from the Workflows page or `POST /api/workflows/definitions`, validated server-side: only the four registered worker tasks, only `SIMPLE` operators, no `HTTP`/`EVENT`/`SUB_WORKFLOW` tasks, no overwriting an existing name+version. Registration therefore cannot become an arbitrary-execution or SSRF primitive. The dashboard starts the two managed workflows; other registered definitions are available to services and workers.
 
 ## Integrations
 
@@ -144,7 +144,7 @@ The backend suite includes an end-to-end cycle on deterministic local infrastruc
 - Logical clusters are groupings, not discovered Kubernetes/compute clusters. Provider-discovered infrastructure is not modelled yet.
 - Railway's inventory query is unverified without credentials, and provider-reported per-service health is not mapped to service status.
 - Alerts support webhooks only (email/Slack are extension points).
-- Workflow definitions cannot be registered from the UI; new definitions ship as reviewed code.
+- Definition registration is limited to combinations of the four built-in worker tasks. To add a new task type you must ship worker code; the engine will not execute anything else from this UI.
 - The collector runs inside the API process. Scaling the API horizontally is safe (advisory lock) but the collector is not a separate worker fleet.
 - Deployment is manual; no Railway resources were changed by this work.
 

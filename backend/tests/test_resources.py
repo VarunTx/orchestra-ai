@@ -430,3 +430,90 @@ task_poll_total{taskType="unrelated"} 99.0
     assert summary['heap_max_mb'] == 500.0
     assert summary['task_poll_total'] == {'cp_normalize_incident': 7}
     assert summary['uptime_seconds'] == 123.5
+
+
+def _definition(**overrides):
+    definition = {
+        'name': 'manual_recheck',
+        'version': 1,
+        'schemaVersion': 2,
+        'description': 'Re-run deterministic diagnostics and publish a report',
+        'inputParameters': ['service', 'logs'],
+        'tasks': [
+            {'name': 'cp_diagnose_incident', 'taskReferenceName': 'diagnose', 'type': 'SIMPLE',
+             'inputParameters': {'incident': '${workflow.input.incident}'}},
+            {'name': 'cp_publish_report', 'taskReferenceName': 'report', 'type': 'SIMPLE',
+             'inputParameters': {'incident': '${workflow.input.incident}',
+                                 'analysis': '${diagnose.output}'}},
+        ],
+    }
+    definition.update(overrides)
+    return definition
+
+
+@requires_db
+def test_register_definition_accepts_safe_worker_workflows(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.main import engine
+
+    calls = []
+
+    async def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        return [] if method == 'GET' else None
+
+    monkeypatch.setattr(engine, 'request', fake_request)
+    response = client.post('/api/workflows/definitions', headers=HEADERS,
+                           json={'definition': _definition()})
+    assert response.status_code == 201, response.text
+    assert response.json()['name'] == 'manual_recheck'
+    put = [c for c in calls if c[0] == 'PUT']
+    assert put and put[0][1] == 'metadata/workflow'
+    sent = put[0][2]['json'][0]
+    assert sent['timeoutSeconds'] == 600 and sent['timeoutPolicy'] == 'TIME_OUT_WF'
+    assert any(entry['action'] == 'workflow.register' for entry in db.query('SELECT action FROM audit_log'))
+
+
+@requires_db
+def test_register_definition_rejects_unsafe_or_unknown_tasks(monkeypatch):
+    from app.main import engine
+
+    async def fake_request(method, path, **kwargs):
+        return []
+
+    monkeypatch.setattr(engine, 'request', fake_request)
+
+    http_task = _definition(tasks=[
+        {'name': 'cp_diagnose_incident', 'taskReferenceName': 'diagnose', 'type': 'HTTP'},
+    ])
+    assert client.post('/api/workflows/definitions', headers=HEADERS,
+                       json={'definition': http_task}).status_code == 422
+
+    unknown_worker = _definition(tasks=[
+        {'name': 'shell_command', 'taskReferenceName': 'run', 'type': 'SIMPLE'},
+    ])
+    assert client.post('/api/workflows/definitions', headers=HEADERS,
+                       json={'definition': unknown_worker}).status_code == 422
+
+    assert client.post('/api/workflows/definitions', headers=HEADERS, json={
+        'definition': _definition(extra_key='nope'),
+    }).status_code == 422
+    assert client.post('/api/workflows/definitions', headers=HEADERS, json={
+        'definition': _definition(version=0),
+    }).status_code == 422
+    assert client.post('/api/workflows/definitions', json={'definition': _definition()}).status_code == 401
+
+
+@requires_db
+def test_register_definition_rejects_duplicate_version(monkeypatch):
+    from app.main import engine
+
+    async def fake_request(method, path, **kwargs):
+        if method == 'GET':
+            return [{'name': 'manual_recheck', 'version': 1}]
+        return None
+
+    monkeypatch.setattr(engine, 'request', fake_request)
+    response = client.post('/api/workflows/definitions', headers=HEADERS,
+                           json={'definition': _definition()})
+    assert response.status_code == 409

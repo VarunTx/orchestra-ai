@@ -117,7 +117,9 @@ Task definitions: `timeoutSeconds` 90, `responseTimeoutSeconds` 75, `timeoutPoli
 | `cp_analyze_incident` | One Gemini request with a JSON schema; failures surface only type + HTTP status | Pure, but billable |
 | `cp_publish_report` | Assembles the report with `generated_at` and `requires_human_review: true` | Pure |
 
-Definitions are installed by the API lifespan hook (idempotent `POST metadata/taskdefs`, `PUT metadata/workflow`), retried for 180 s on 502/503. Startup fails if registration cannot complete. The engine-wide catalog is read-only; arbitrary definitions are never accepted from the browser.
+Definitions are installed by the API lifespan hook (idempotent `POST metadata/taskdefs`, `PUT metadata/workflow`), retried for 180 s on 502/503. Startup fails if registration cannot complete.
+
+Additional definitions may be registered through `POST /api/workflows/definitions`. Validation is intentionally narrow: name/schema/version bounds, 1–25 tasks, `type` restricted to `SIMPLE`, task names restricted to the four worker-backed definitions, unique `taskReferenceName`, bounded `inputParameters`, and a 409 when the name+version already exists. `HTTP`, `EVENT`, `SUB_WORKFLOW` and dynamic operators are rejected, so the endpoint cannot be used to call internal services or execute arbitrary code. Registration is audited.
 
 ## API surface
 
@@ -138,6 +140,7 @@ Definitions are installed by the API lifespan hook (idempotent `POST metadata/ta
 | `POST /api/agent/observations` | Agent ingest (connector token, not an owner session) |
 | `GET /api/audit`, `GET /api/settings` | Audit trail, read-only runtime configuration |
 | `GET /api/workflows`, `GET /api/workflows/catalog`, `GET /api/schedules` | Managed definitions, engine-wide catalog, read-only schedules |
+| `POST /api/workflows/definitions` | Validated registration of worker-backed SIMPLE definitions |
 | `POST /api/executions`, `GET /api/executions`, `GET /api/executions/{id}`, `…/retry`, `…/terminate` | Execution operations |
 | `GET /api/infrastructure` | Engine latency, worker poll ages, Gemini state, real database probe |
 | `GET /healthz` | Unauthenticated liveness |
