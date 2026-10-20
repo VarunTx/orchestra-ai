@@ -1692,3 +1692,6 @@ textarea {
 .shell.embedded { display: block; }
 .shell.embedded .main-shell { min-height: 0; }
 .shell.embedded .content { padding: 0; }
+/* Wide tables scroll inside .table-scroll; never let them widen the page. */
+.content { overflow-x: clip; }
+.table-scroll { max-width: 100%; }

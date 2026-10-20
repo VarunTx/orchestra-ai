@@ -1,0 +1,56 @@
+# Production overrides for a single free VM (Oracle Always Free A1 or similar).
+#
+#   docker compose -f compose.yaml -f compose.prod.yaml up -d --build --wait
+#   docker compose -f compose.yaml -f compose.prod.yaml --profile public up -d --build --wait
+#
+# Only Caddy (profile "public") is reachable from the internet. Everything else
+# stays on the private Compose network or a loopback binding.
+
+services:
+  postgres:
+    mem_limit: 768m
+    logging: &logging
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+  redis:
+    mem_limit: 128m
+    logging: *logging
+  conductor:
+    mem_limit: 1408m
+    logging: *logging
+  api:
+    mem_limit: 512m
+    environment:
+      HTTP_CHECK_ALLOW_PRIVATE: 'false'
+      MONITOR_TICK_SECONDS: '2'
+    logging: *logging
+  workers:
+    mem_limit: 384m
+    logging: *logging
+  web:
+    mem_limit: 512m
+    logging: *logging
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    profiles: ['public']
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    mem_limit: 192m
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:

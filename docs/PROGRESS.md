@@ -127,3 +127,26 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - `scripts/docker_agent.py` was not run end-to-end; the ingest endpoint it calls is covered by a test using a simulated agent token.
 - Gemini remains disabled and unverified; no paid request was made.
 - No deployment, Railway resource change, remote push or destructive recovery test was performed.
+
+## Orkes-parity engine profile, telemetry and free hosting — October 20, 2026
+
+- Reworked `infra/conductor.properties` to the Orkes *Production Deployment* "PostgreSQL stack (simplest)": Postgres for db/queue/external payload/indexing, **Valkey 8.1 for the execution lock**, sweeper (8 threads, 2 s poll, batch 2), system task workers (20 threads / 20 polls), and explicit payload thresholds (5 MB spill / 10 MB hard limit per workflow, 3 MB / 10 MB per task, 256 KB variables).
+- Added a `valkey` service; Conductor now waits for its health before starting. Verified: engine healthy in 10 s and the full real-engine smoke suite passed with the Redis lock active.
+- Disabled the Elasticsearch health indicator (`management.health.elasticsearch.enabled=false`). Before this, `/actuator/health` reported **DOWN** while the engine was healthy, because indexing is PostgreSQL-native. After a restart it reports **UP** with db/disk/ping/ssl components.
+- Added `telemetry.py`: parses Conductor's Micrometer output at `/actuator/prometheus`, sums workflow failure counters by status, successful starts, in-flight tasks, mean task execution, mean queue wait, JVM heap and uptime; adds per-task queue depth from `GET /api/tasks/queue/size`. Exposed as `/api/infrastructure` → `engine.telemetry`, rendered in a new "Engine telemetry" panel on the Workflows page. Missing series render as `—`, never zero.
+- Verified live telemetry after a smoke run: `workflow_failures {FAILED: 2, TERMINATED: 1}`, 4 successful starts, mean task execution 29.0 ms, mean queue wait 1078.7 ms, heap 205/1024 MB, per-queue depths 0, poll counters per managed task.
+- Added Conductor **task domains**: `TASK_DOMAIN` starts executions with `taskToDomain: {"*": "<domain>, NO_DOMAIN"}` (documented fallback) and `WORKER_DOMAIN` binds a fleet to a domain via the SDK's `domain=` parameter. Verified by running the smoke suite with `TASK_DOMAIN=production` and no domain-specific fleet: every workflow completed through the `NO_DOMAIN` fallback.
+- Added the free-VM deployment kit: `compose.prod.yaml` (memory limits, log rotation, Caddy behind a `public` profile), `Caddyfile`, `scripts/deploy_wizard.sh` (7 guided stages), `scripts/backup.sh` and `scripts/restore.sh`, plus `docs/DEPLOY_FREE.md` with the licence/cost table and Oracle caveats.
+- Verified backup and restore locally: both databases dumped (56 KB conductor, 16 KB orchestra), `gzip -t` passed, restore into `orchestra_restore` produced 1 project, 2 services and 1 migration row, then the drill database was dropped. No live data was touched.
+- Fixed a real responsive defect the new panels exposed: a wide table widened the page to 412 px at a 390 px viewport. `.content` now clips horizontal overflow so wide tables scroll inside `.table-scroll` instead of moving the page. The mobile Playwright assertion passes again, and `docs/screenshots/workflows.png` now captures the catalog plus engine telemetry.
+
+### Decisions recorded
+
+- Railway is retained only as an existing demonstration; the documented target is one free VM (Oracle Always Free A1: 2 OCPU / 12 GB / 200 GB, verified against Oracle's current Always Free page). Tailscale (free) or Caddy + DuckDNS provide access without buying a domain. Render/Fly no longer offer a usable free always-on tier.
+- All new runtime components are open source: Valkey (BSD-3), Caddy (Apache 2.0), PostgreSQL, Conductor OSS. Tailscale and DuckDNS are free services, not open source; Headscale is documented as the self-hosted alternative.
+
+### Still unverified
+
+- No VM has been provisioned, so `compose.prod.yaml`, Caddy TLS and the wizard's remote steps are **untested against a real host**. They are configuration and instructions, not verified deployments.
+- Railway still runs the old pinned commit and was not touched.
+- Gemini remains disabled and unverified. No paid API call was made.

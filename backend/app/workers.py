@@ -1,6 +1,7 @@
 """Official SDK worker processes. Conductor owns scheduling, retries and task state."""
 import hashlib
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from conductor.client.automator.task_handler import TaskHandler
@@ -12,6 +13,9 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from .settings import Settings
 
+# Optional isolation: a second worker fleet can poll a domain instead of the default queue.
+DOMAIN = os.getenv('WORKER_DOMAIN', '').strip() or None
+
 
 class Analysis(BaseModel):
     summary: str
@@ -21,7 +25,7 @@ class Analysis(BaseModel):
     confidence: str = Field(description='low, medium or high; reflect uncertainty')
 
 
-@worker_task(task_definition_name='cp_normalize_incident', poll_interval_millis=1000)
+@worker_task(task_definition_name='cp_normalize_incident', poll_interval_millis=1000, domain=DOMAIN)
 def normalize_incident(service: str, severity: str, logs: str) -> dict:
     if not service or not logs or len(logs) > 20000:
         raise ValueError('Incident requires a service and 1–20000 characters of evidence')
@@ -29,7 +33,7 @@ def normalize_incident(service: str, severity: str, logs: str) -> dict:
             'line_count': len(logs.strip().splitlines()), 'evidence_sha256': hashlib.sha256(logs.strip().encode()).hexdigest()}
 
 
-@worker_task(task_definition_name='cp_diagnose_incident', poll_interval_millis=1000)
+@worker_task(task_definition_name='cp_diagnose_incident', poll_interval_millis=1000, domain=DOMAIN)
 def diagnose_incident(incident: dict, failure_mode: str = 'none', delay_seconds: int = 0) -> dict:
     if failure_mode == 'always' or (failure_mode == 'once' and get_task_context().get_retry_count() == 0):
         raise RuntimeError('Intentional diagnostic failure: testing Conductor retry policy')
@@ -42,7 +46,7 @@ def diagnose_incident(incident: dict, failure_mode: str = 'none', delay_seconds:
             'confidence': 'low'}
 
 
-@worker_task(task_definition_name='cp_analyze_incident', poll_interval_millis=1000)
+@worker_task(task_definition_name='cp_analyze_incident', poll_interval_millis=1000, domain=DOMAIN)
 def analyze_incident(incident: dict, failure_mode: str = 'none', delay_seconds: int = 0) -> dict:
     settings = Settings()
     if not settings.enable_gemini or not settings.gemini_api_key:
@@ -64,7 +68,7 @@ def analyze_incident(incident: dict, failure_mode: str = 'none', delay_seconds: 
     return {**analysis.model_dump(), 'provider': 'gemini', 'model': settings.gemini_model}
 
 
-@worker_task(task_definition_name='cp_publish_report', poll_interval_millis=1000)
+@worker_task(task_definition_name='cp_publish_report', poll_interval_millis=1000, domain=DOMAIN)
 def publish_report(incident: dict, analysis: dict) -> dict:
     return {'service': incident['service'], 'severity': incident['severity'],
             'evidence_sha256': incident['evidence_sha256'], 'analysis': analysis,

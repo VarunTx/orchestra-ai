@@ -36,9 +36,26 @@ export type Task = {
   outputData: Record<string, unknown>;
   reasonForIncompletion?: string;
 };
+export type EngineTelemetry = {
+  available: boolean;
+  sampled_at?: string;
+  source?: string;
+  error?: string;
+  workflow_failures?: Record<string, number>;
+  workflow_start_success?: number;
+  tasks_in_flight?: number;
+  task_poll_total?: Record<string, number>;
+  task_execution_ms?: number | null;
+  task_queue_wait_ms?: number | null;
+  heap_used_mb?: number | null;
+  heap_max_mb?: number | null;
+  uptime_seconds?: number;
+  queues?: { task: string; depth: number | null }[];
+};
+
 export type Infrastructure = {
   observedAt: number;
-  engine: { status: string; latencyMs: number | null };
+  engine: { status: string; latencyMs: number | null; telemetry?: EngineTelemetry };
   api: { status: string };
   workers: {
     name: string;

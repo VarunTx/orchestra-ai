@@ -17,6 +17,7 @@ from .monitor import Collector
 from .security import SecretBox
 from .settings import Settings
 from .store import Store
+from . import telemetry
 
 settings = Settings()
 engine = Engine(settings.conductor_url)
@@ -172,8 +173,11 @@ async def start(body: StartRequest):
             raise HTTPException(409, 'Gemini is disabled or its API key is missing. Configure .env and restart API/workers.')
         if body.failure_mode != 'none' or body.delay_seconds:
             raise HTTPException(422, 'Failure injection is only available for diagnostics')
-    wid = await engine.request('POST', 'workflow', json={
-        'name': body.name, 'version': 1, 'input': body.model_dump(exclude={'name'})})
+    start_body = {'name': body.name, 'version': 1, 'input': body.model_dump(exclude={'name'})}
+    if settings.task_domain:
+        # Documented fallback: use the domain when a worker is polling it, otherwise NO_DOMAIN.
+        start_body['taskToDomain'] = {'*': f'{settings.task_domain}, NO_DOMAIN'}
+    wid = await engine.request('POST', 'workflow', json=start_body)
     store.audit('owner', 'workflow.start', 'workflow', wid, {'name': body.name})
     return {'workflowId': wid}
 
@@ -230,6 +234,7 @@ async def infrastructure():
         connected = True
     except HTTPException:
         latency, connected = None, False
+    engine_telemetry = await telemetry.collect(settings, engine, TASK_NAMES)
     try:
         polls = await engine.request('GET', 'tasks/queue/polldata/all') if connected else []
         workers = []
@@ -247,7 +252,9 @@ async def infrastructure():
                    'latencyMs': round((time.monotonic() - started) * 1000)}
     except Exception:
         storage = {'type': 'PostgreSQL', 'status': 'unavailable', 'latencyMs': None}
-    return {'observedAt': now, 'engine': {'status': 'connected' if connected else 'unavailable', 'latencyMs': latency},
+    return {'observedAt': now,
+            'engine': {'status': 'connected' if connected else 'unavailable', 'latencyMs': latency,
+                       'telemetry': engine_telemetry},
             'api': {'status': 'up'}, 'workers': workers,
             'gemini': {'configured': bool(settings.gemini_api_key), 'enabled': settings.enable_gemini, 'model': settings.gemini_model,
                        'status': 'configured' if settings.enable_gemini and settings.gemini_api_key else 'disabled'},

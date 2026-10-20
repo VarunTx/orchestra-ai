@@ -14,3 +14,5 @@ playwright-report/
 
 *.tsbuildinfo
 next-env.d.ts
+backups/
+.env.deploy

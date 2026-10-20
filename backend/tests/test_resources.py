@@ -378,3 +378,55 @@ def test_login_attempts_are_rate_limited():
     assert statuses[0] == 401
     assert statuses[-1] == 429
     auth.limiter._hits.clear()
+
+
+def test_execution_start_includes_task_domain_when_configured(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.main import engine, settings
+
+    monkeypatch.setattr(settings, 'task_domain', 'production')
+    mock = AsyncMock(return_value='00000000-0000-0000-0000-000000000000')
+    monkeypatch.setattr(engine, 'request', mock)
+    response = client.post('/api/executions', headers=HEADERS, json={
+        'name': 'diagnostic_pipeline', 'service': 'checkout',
+        'logs': 'ERROR timeout at database', 'severity': 'high',
+    })
+    assert response.status_code == 201
+    body = mock.call_args.kwargs['json']
+    assert body['taskToDomain'] == {'*': 'production, NO_DOMAIN'}
+
+    monkeypatch.setattr(settings, 'task_domain', '')
+    client.post('/api/executions', headers=HEADERS, json={
+        'name': 'diagnostic_pipeline', 'service': 'checkout',
+        'logs': 'ERROR timeout at database', 'severity': 'high',
+    })
+    assert 'taskToDomain' not in mock.call_args.kwargs['json']
+
+
+def test_prometheus_summary_handles_missing_and_partial_series():
+    from app.telemetry import parse_prometheus, summarise
+
+    text = """
+# HELP workflow_failure_total Failed workflows
+workflow_failure_total{status="FAILED",workflowName="diagnostic_pipeline"} 2.0
+workflow_failure_total{status="TERMINATED"} 1.0
+workflow_start_success_total 9.0
+task_execution_seconds_count{taskType="cp_publish_report"} 4.0
+task_execution_seconds_sum{taskType="cp_publish_report"} 0.8
+tasks_in_workflow 3.0
+jvm_memory_used_bytes{area="heap",id="G1 Old Gen"} 1.048576E8
+jvm_memory_max_bytes{area="heap",id="G1 Old Gen"} 5.24288E8
+process_uptime_seconds 123.5
+task_poll_total{taskType="cp_normalize_incident"} 7.0
+task_poll_total{taskType="unrelated"} 99.0
+"""
+    summary = summarise(parse_prometheus(text), ['cp_normalize_incident', 'cp_publish_report'])
+    assert summary['workflow_failures'] == {'FAILED': 2, 'TERMINATED': 1}
+    assert summary['workflow_start_success'] == 9
+    assert summary['tasks_in_flight'] == 3
+    assert summary['task_execution_ms'] == 200.0
+    assert summary['task_queue_wait_ms'] is None
+    assert summary['heap_used_mb'] == 100.0
+    assert summary['heap_max_mb'] == 500.0
+    assert summary['task_poll_total'] == {'cp_normalize_incident': 7}
+    assert summary['uptime_seconds'] == 123.5

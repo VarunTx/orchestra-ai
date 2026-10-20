@@ -14,16 +14,29 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
+  redis:
+    image: valkey/valkey:8.1-alpine
+    command: ['valkey-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: [CMD, valkey-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
   conductor:
     image: conductoross/conductor@sha256:d96e4bb8cef00e81de1607fa952d988e8cd7604d7a55ff2288c8feb2baec22da
     environment:
       CONFIG_PROP: control-plane.properties
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
       JAVA_OPTS: -Xms256m -Xmx1024m
     volumes:
       - ./infra/conductor.properties:/app/config/control-plane.properties:ro
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: [CMD-SHELL, 'curl -fsS http://localhost:8080/health >/dev/null']

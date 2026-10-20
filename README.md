@@ -6,6 +6,19 @@ A self-hostable **personal developer control plane** for the projects you build.
 
 Conductor OSS remains the only workflow engine. Orchestra AI adds an application-owned inventory, monitoring and incident layer around it; it never re-implements scheduling, retries or execution state.
 
+## Orkes parity map
+
+Orkes Conductor is the commercial product around an open-source engine. This project reproduces the parts one developer actually uses, and is explicit about what it does not:
+
+| Orkes capability | Orchestra AI |
+| --- | --- |
+| Durable workflows on a documented production profile | Conductor OSS with the docs' **PostgreSQL stack**: Postgres for db/queue/payload/indexing, **Valkey for the execution lock**, sweeper and system-task tuning, explicit payload thresholds |
+| Workflow and task inspection | Execution history, filtering, task timelines, failed-task evidence, retry/termination, definition catalog, read-only schedules |
+| Engine observability | Real telemetry scraped from Conductor's Micrometer/Prometheus endpoint: queue depth, task execution and queue-wait time, terminal outcomes, JVM heap, uptime |
+| Worker isolation per environment | Conductor **task domains** (`taskToDomain`) with the documented `NO_DOMAIN` fallback; `WORKER_DOMAIN` runs an isolated fleet |
+| Applications, RBAC, multi-tenant control plane | **Not reproduced.** Single owner, one workspace, no SSO/billing — deliberately out of scope |
+| Hosted platform | Self-hosted on one free VM (`docs/DEPLOY_FREE.md`), not a managed service |
+
 ## What works today
 
 - **Project inventory**: projects → environments → services, plus logical clusters and deployments, persisted in an application-owned PostgreSQL database with migrations.
@@ -39,6 +52,22 @@ Only the dashboard (`127.0.0.1:3000`) and the authenticated API (`127.0.0.1:8000
 4. Open the project to inspect status, trigger a check, disable monitoring or move the project to another cluster.
 
 A project without health URLs stays explicitly `unknown` — it is never guessed healthy.
+
+## Engine profile and telemetry
+
+`infra/conductor.properties` follows the Orkes *Production Deployment* guide for the "PostgreSQL stack (simplest)":
+
+- PostgreSQL for database, queue, external payload storage and indexing.
+- **Valkey** for `conductor.workflow-execution-lock` (BSD-licensed, no Redis licence concerns).
+- Sweeper (`sweeperThreadCount=8`) and system-task workers (20 threads / 20 polls) tuned as documented.
+- Explicit payload thresholds (5 MB spill, 10 MB hard limit for workflows; 3 MB / 10 MB for tasks).
+- Micrometer metrics on `/actuator/prometheus`; the Elasticsearch health indicator is disabled because indexing is PostgreSQL-native.
+
+The dashboard reads that endpoint plus `/api/tasks/queue/size` and shows queue depth, mean task execution, mean queue wait, terminal outcomes, heap usage and uptime. Missing series display as `—`, never as zero.
+
+## Task domains
+
+`TASK_DOMAIN=production` starts executions with `taskToDomain: {"*": "production, NO_DOMAIN"}`, which is the documented fallback: use a domain-specific worker fleet when one is polling, otherwise fall back to the default queue. Run a second fleet with `WORKER_DOMAIN=production` to isolate it. With no domain configured, behaviour is unchanged.
 
 ## Monitoring behaviour
 
@@ -118,6 +147,19 @@ The backend suite includes an end-to-end cycle on deterministic local infrastruc
 - Workflow definitions cannot be registered from the UI; new definitions ship as reviewed code.
 - The collector runs inside the API process. Scaling the API horizontally is safe (advisory lock) but the collector is not a separate worker fleet.
 - Deployment is manual; no Railway resources were changed by this work.
+
+## Deploy it free
+
+```sh
+./scripts/deploy_wizard.sh
+```
+
+Seven guided stages: access model (Tailscale or public Caddy + DuckDNS), Oracle Always Free VM, Docker, DNS, generated secrets, stack start, verification. Details, licences, memory budget and caveats: [docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md).
+
+```sh
+./scripts/backup.sh    # both databases, 14-day retention, optional offsite
+./scripts/restore.sh backups/orchestra-<stamp>.sql.gz   # restores to a scratch database
+```
 
 ## Operations
 

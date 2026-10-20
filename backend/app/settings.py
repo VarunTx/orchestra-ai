@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     conductor_url: str = ''
     conductor_host: str = 'localhost'
+    conductor_metrics_url: str = ''
     control_plane_token: str = Field(min_length=32)
     gemini_api_key: str = ''
     gemini_model: str = 'gemini-2.5-flash'
@@ -29,6 +30,10 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 720
     login_attempts_per_minute: int = 8
 
+    # Optional Conductor task domain. Workers poll WORKER_DOMAIN; executions are
+    # started with "<TASK_DOMAIN>, NO_DOMAIN" so a missing fleet falls back safely.
+    task_domain: str = ''
+
     # Monitoring collector (runs inside the API process).
     monitor_enabled: bool = True
     monitor_tick_seconds: float = 2.0
@@ -45,6 +50,8 @@ class Settings(BaseSettings):
     def resolve_urls(self):
         if not self.conductor_url:
             self.conductor_url = f"http://{self.conductor_host}:8080/api"
+        if not self.conductor_metrics_url:
+            self.conductor_metrics_url = self.conductor_url.removesuffix('/api') + '/actuator/prometheus'
         if not self.database_password:
             self.database_password = self.postgres_password
         if not self.database_url:

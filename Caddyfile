@@ -1,0 +1,15 @@
+# Public TLS front door. Set SITE_ADDRESS to your hostname (for example
+# orchestra-ai.duckdns.org) or leave it as localhost for an internal CA.
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# The dashboard proxies every API call server-side; the API is never public.
+	reverse_proxy web:3000
+}

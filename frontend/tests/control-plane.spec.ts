@@ -115,12 +115,14 @@ test("real Conductor executions, definitions, workers and mobile layout", async 
   await expect(page.locator(".inspector")).toContainText("deterministic");
   await page.screenshot({ path: "../docs/screenshots/execution.png", fullPage: true });
 
-  await page.getByRole("button", { name: "Workflows", exact: true }).click();
+  await page.getByRole("link", { name: "Workflows", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Designed to keep moving." })).toBeVisible();
   await page.getByRole("button", { name: "View JSON" }).click();
   await expect(page.locator("pre")).toContainText("incident_analysis");
   await page.getByRole("button", { name: "View graph" }).click();
   await expect(page.locator(".dag-node")).toHaveCount(3);
+  await expect(page.getByText("Engine telemetry")).toBeVisible();
+  await page.screenshot({ path: "../docs/screenshots/workflows.png", fullPage: true });
 
   await page.getByRole("button", { name: "Infrastructure", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Python worker fleet" })).toBeVisible();

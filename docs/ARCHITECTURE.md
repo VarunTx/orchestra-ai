@@ -10,7 +10,9 @@ Reference for the code as it exists today. Where behaviour is uncertain or unver
 | `api` | FastAPI on Python 3.11 | `127.0.0.1:8000` | Authenticated gateway, resource API **and the monitoring collector** |
 | `workers` | Same image, `python -m app.workers` | none | Official `conductor-python` TaskHandler polling |
 | `conductor` | `conductoross/conductor` pinned by digest | `:8080`, private network | Sole orchestration engine |
+| `redis` | `valkey/valkey:8.1-alpine` | private network | Conductor execution lock only (BSD-licensed) |
 | `postgres` | `postgres:16.6-alpine` | private network | Two databases: `conductor` (engine) and `orchestra` (platform) |
+| `caddy` | `caddy:2.10-alpine`, profile `public` | `:80`, `:443` | TLS front door for the free-VM deployment |
 
 The platform database is created on first API startup and migrated from `backend/app/migrations/`. It never lives inside Conductor's schema, so engine upgrades and platform migrations are independent.
 
@@ -57,6 +59,25 @@ Conductor is not used as the polling scheduler: checks are per-service and dynam
 - `incident_events` is an append-only trail (opened, acknowledged, note, resolved) with actor attribution.
 - `alerts` store sealed webhook targets; delivery is attempted only when severity and cooldown allow, and every attempt is recorded in `notifications`.
 - Webhook targets are SSRF-checked at send time; a rejected target is recorded as a failed delivery.
+
+### Engine profile
+
+`infra/conductor.properties` implements the docs' "PostgreSQL stack (simplest)":
+
+- `conductor.db.type`, `conductor.queue.type`, `conductor.external-payload-storage.type` and `conductor.indexing.type` are all `postgres`.
+- `conductor.workflow-execution-lock.type=redis` against Valkey; the lock is released between decisions, so an idle keyspace is expected.
+- Sweeper (`sweeperThreadCount=8`, 2 s poll, batch 2) keeps long-running workflows progressing.
+- System task workers run 20 threads / 20 polls for HTTP, Wait, Inline and Switch tasks.
+- Payload thresholds: 5 MB workflow input/output spill to external storage, 10 MB hard limit; tasks 3 MB / 10 MB; workflow variables 256 KB.
+- Micrometer metrics are exposed at `/actuator/prometheus`; the Elasticsearch health indicator is disabled because indexing is PostgreSQL-native (without this, `/actuator/health` reports DOWN while the engine is healthy).
+
+### Telemetry
+
+`telemetry.py` parses the Prometheus exposition format and sums the series that matter: workflow failure counters by status, successful starts, in-flight tasks, mean task execution and queue-wait time, JVM heap and uptime. Queue depth comes from `GET /api/tasks/queue/size?taskType=…` per managed task. The result is attached to `GET /api/infrastructure` as `engine.telemetry`. A missing series yields `null` and the UI renders `—`; nothing is estimated.
+
+### Task domains
+
+`TASK_DOMAIN` adds `taskToDomain: {"*": "<domain>, NO_DOMAIN"}` to every start request, which is the documented fallback order. `WORKER_DOMAIN` makes a worker fleet poll that domain (`@worker_task(domain=…)`, supported by `conductor-python`). With neither set, all tasks use the default queue. Domains are the isolation primitive here; `isolationGroupId` only applies to HTTP/Kafka system tasks and is not used.
 
 ### Connectors
 
@@ -148,6 +169,7 @@ Definitions are installed by the API lifespan hook (idempotent `POST metadata/ta
 ## Operating and verifying
 
 - `make up` builds and waits for the stack; `make test-db` runs the complete backend suite in the Compose network; `make typecheck`, `make build`, `make browser`, `make smoke`.
+- `scripts/deploy_wizard.sh` provisions a free VM deployment (`compose.prod.yaml` + Caddy profile); `scripts/backup.sh` and `scripts/restore.sh` cover both databases. See `docs/DEPLOY_FREE.md`.
 - `scripts/docker_agent.py` pushes local container health from a machine that owns Docker.
 - `scripts/smoke.py` exercises the real engine; `scripts/recovery.py` is destructive and local-only.
 - CI runs typecheck, build, Compose up, backend tests, smoke, Playwright and recovery, then tears the stack down.
