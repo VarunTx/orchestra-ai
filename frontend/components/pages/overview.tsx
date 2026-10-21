@@ -151,7 +151,7 @@ export default function Overview() {
           <section className="split-3">
             <div className="panel">
               <div className="panel-heading">
-                <h2>Clusters</h2>
+                <h2>Project groups</h2>
                 <Link className="text-button" href="/clusters">
                   Manage
                 </Link>
@@ -181,7 +181,7 @@ export default function Overview() {
               </div>
               {data.deployments.length === 0 ? (
                 <Empty title="No deployments recorded">
-                  Add a GitHub connector on Integrations to import workflow runs.
+                  Record a historical deployment under Deployments. Verify its commit separately in the project Releases tab.
                 </Empty>
               ) : (
                 <div className="timeline">
@@ -227,12 +227,12 @@ export default function Overview() {
 
           <section className="panel">
             <div className="panel-heading">
-              <h2>Recent failed Conductor executions</h2>
+              <h2>Recent failed runs</h2>
               {data.workflows.status === "unavailable" ? (
                 <span className="tag">engine unavailable</span>
               ) : (
                 <Link className="text-button" href="/executions">
-                  Open executions
+                  Open runs
                 </Link>
               )}
             </div>

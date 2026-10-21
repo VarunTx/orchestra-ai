@@ -5,28 +5,50 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import type { Project, Service } from "@/lib/types";
-import { Empty, ErrorBanner, Loading, PageHeading, Status, ago } from "@/components/resource-ui";
+import {
+  Empty,
+  ErrorBanner,
+  Loading,
+  PageHeading,
+  Status,
+  ago,
+} from "@/components/resource-ui";
 import { Button } from "@/components/ui/button";
 
 export default function ServicesPage() {
   const [status, setStatus] = useState("");
   const [project, setProject] = useState("");
-  const suffix = status || project ? `?${new URLSearchParams({ ...(status ? { status } : {}), ...(project ? { project_id: project } : {}) })}` : "";
-  const { data, error, loading, reload } = useApi<Service[]>(`services${suffix}`, { pollMs: 10000 });
+  const suffix =
+    status || project
+      ? `?${new URLSearchParams({ ...(status ? { status } : {}), ...(project ? { project_id: project } : {}) })}`
+      : "";
+  const { data, error, loading, reload } = useApi<Service[]>(
+    `services${suffix}`,
+    { pollMs: 10000 },
+  );
   const projects = useApi<Project[]>("projects");
+  const [busy, setBusy] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function check(service: Service) {
+    if (busy) return;
+    setBusy(true);
     setMessage(null);
+    setSuccess(false);
     try {
-      const result = await api<{ observation: { status: string; message: string } }>(
-        `services/${service.id}/check`,
-        { method: "POST", body: "{}" },
+      const result = await api<{
+        observation: { status: string; message: string };
+      }>(`services/${service.id}/check`, { method: "POST", body: "{}" });
+      setMessage(
+        `${service.name}: ${result.observation.status} — ${result.observation.message}`,
       );
-      setMessage(`${service.name}: ${result.observation.status} — ${result.observation.message}`);
+      setSuccess(true);
       await reload();
     } catch (exception) {
       setMessage((exception as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -42,9 +64,13 @@ export default function ServicesPage() {
           </Button>
         }
       />
-      <ErrorBanner message={error ?? message} />
+      <ErrorBanner message={message ?? error} success={!!message && success} />
       <div className="toolbar" style={{ marginBottom: 14 }}>
-        <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter by status">
+        <select
+          value={status}
+          onChange={(event) => setStatus(event.target.value)}
+          aria-label="Filter by status"
+        >
           <option value="">All statuses</option>
           <option value="healthy">Healthy</option>
           <option value="degraded">Degraded</option>
@@ -52,7 +78,11 @@ export default function ServicesPage() {
           <option value="unknown">Unknown</option>
           <option value="disabled">Monitoring disabled</option>
         </select>
-        <select value={project} onChange={(event) => setProject(event.target.value)} aria-label="Filter by project">
+        <select
+          value={project}
+          onChange={(event) => setProject(event.target.value)}
+          aria-label="Filter by project"
+        >
           <option value="">All projects</option>
           {(projects.data ?? []).map((item) => (
             <option key={item.id} value={item.id}>
@@ -86,13 +116,22 @@ export default function ServicesPage() {
                 {(data ?? []).map((service) => (
                   <tr key={service.id}>
                     <td>
-                      <strong>{service.name}</strong>
+                      <Link
+                        className="run-link"
+                        href={`/services/${service.id}`}
+                      >
+                        <strong>{service.name}</strong>
+                      </Link>
                       <div className="subtle mono-cell">
-                        {service.kind} · {service.provider} · {service.health_url ?? "no URL"}
+                        {service.kind} · {service.provider} ·{" "}
+                        {service.health_url ?? "no URL"}
                       </div>
                     </td>
                     <td>
-                      <Link className="run-link" href={`/projects/${service.project_id}`}>
+                      <Link
+                        className="run-link"
+                        href={`/projects/${service.project_id}`}
+                      >
                         <strong>{service.project_name}</strong>
                       </Link>
                     </td>
@@ -100,12 +139,14 @@ export default function ServicesPage() {
                     <td>
                       <Status value={service.current_status} />
                     </td>
-                    <td className="mono-cell">{ago(service.last_checked_at)}</td>
+                    <td className="mono-cell">
+                      {ago(service.last_checked_at)}
+                    </td>
                     <td className="mono-cell">{service.observations_24h}</td>
                     <td>
                       <button
                         className="text-button"
-                        disabled={!service.health_url}
+                        disabled={busy || !service.health_url}
                         onClick={() => void check(service)}
                       >
                         Check now

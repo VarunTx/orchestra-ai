@@ -21,9 +21,12 @@ async function proxy(
     "deployments",
     "incidents",
     "alerts",
+    "notifications",
     "connectors",
     "audit",
     "settings",
+    "work",
+    "releases",
   ]);
   if (!allowed.has(path[0]))
     return NextResponse.json({ detail: "Not found" }, { status: 404 });
@@ -49,7 +52,8 @@ async function proxy(
         cache: "no-store",
       },
     );
-    return new NextResponse(await response.text(), {
+    const body = await response.text();
+    return new NextResponse(response.status === 204 ? null : body, {
       status: response.status,
       headers: {
         "Content-Type": "application/json",
@@ -63,4 +67,10 @@ async function proxy(
     );
   }
 }
-export { proxy as GET, proxy as POST, proxy as PATCH, proxy as DELETE };
+export {
+  proxy as GET,
+  proxy as POST,
+  proxy as PATCH,
+  proxy as DELETE,
+  proxy as PUT,
+};

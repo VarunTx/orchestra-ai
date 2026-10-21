@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import {
   Boxes,
   ChevronRight,
@@ -25,13 +31,14 @@ import type { Infrastructure } from "@/lib/types";
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/projects", label: "Projects", icon: Folder },
-  { href: "/clusters", label: "Clusters", icon: Boxes },
+  { href: "/clusters", label: "Project groups", icon: Boxes },
   { href: "/services", label: "Services", icon: Server },
   { href: "/deployments", label: "Deployments", icon: Rocket },
-  { href: "/executions", label: "Executions", icon: Terminal },
-  { href: "/workflows", label: "Workflows", icon: Workflow },
+  { href: "/executions", label: "Runs", icon: Terminal },
+  { href: "/workflows", label: "Automations", icon: Workflow },
   { href: "/incidents", label: "Incidents", icon: ShieldAlert },
   { href: "/integrations", label: "Integrations", icon: Plug },
+  { href: "/infrastructure", label: "Infrastructure", icon: Server },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -62,6 +69,10 @@ export default function AppShell({
 
   useEffect(() => {
     void check();
+    const expired = () => setState("anonymous");
+    window.addEventListener("orchestra:session-expired", expired);
+    return () =>
+      window.removeEventListener("orchestra:session-expired", expired);
   }, [check]);
 
   useEffect(() => {
@@ -77,6 +88,7 @@ export default function AppShell({
 
   async function signIn(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
@@ -156,7 +168,9 @@ export default function AppShell({
           </form>
           <small>
             <span className="tiny-dot" />
-            {environment === "hosted" ? "Protected hosted workspace" : "Private local deployment"}
+            {environment === "hosted"
+              ? "Protected hosted workspace"
+              : "Private local deployment"}
           </small>
         </section>
       </main>
@@ -179,11 +193,15 @@ export default function AppShell({
         <nav>
           {NAV.map((item) => {
             const active =
-              item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+              item.href === "/"
+                ? pathname === "/"
+                : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                aria-label={item.label}
+                title={item.label}
                 className={active ? "nav-item active" : "nav-item"}
               >
                 <item.icon size={17} />
@@ -204,10 +222,14 @@ export default function AppShell({
           </p>
         </div>
         <div className="sidebar-bottom">
-          <span className={`live-dot ${infra?.engine.status === "connected" ? "" : "offline"}`} />
+          <span
+            className={`live-dot ${infra?.engine.status === "connected" ? "" : "offline"}`}
+          />
           <div>
             <strong>
-              {infra?.engine.status === "connected" ? "Engine connected" : "Engine unavailable"}
+              {infra?.engine.status === "connected"
+                ? "Engine connected"
+                : "Engine unavailable"}
             </strong>
             <small>Conductor OSS · PostgreSQL</small>
           </div>
@@ -232,7 +254,9 @@ export default function AppShell({
           <div className="topbar-right">
             <span className="environment">
               <span className="tiny-dot" />{" "}
-              {environment === "hosted" ? "Hosted environment" : "Local development"}
+              {environment === "hosted"
+                ? "Hosted environment"
+                : "Local development"}
             </span>
             <span className="avatar">OA</span>
           </div>

@@ -722,7 +722,11 @@ tr:hover td {
   background: none;
   text-align: left;
   padding: 0;
+  width: min(280px, calc(100vw - 144px));
+  white-space: normal;
 }
+.run-label { min-width: 0; }
+.run-label .tag { margin-bottom: 4px; white-space: nowrap; }
 .table-icon {
   background: #f2f5ee;
   border: 1px solid #e8ede3;
@@ -1691,7 +1695,32 @@ textarea {
 }
 .shell.embedded { display: block; }
 .shell.embedded .main-shell { min-height: 0; }
-.shell.embedded .content { padding: 0; }
+
 /* Wide tables scroll inside .table-scroll; never let them widen the page. */
-.content { overflow-x: clip; }
+.content, .embedded-body { min-width: 0; max-width: 100%; }
 .table-scroll { max-width: 100%; }
+
+/* Project lifecycle controls share the existing panels and typography. */
+.project-lifecycle { padding: 20px; }
+.project-lifecycle > .panel-heading { padding: 0 0 16px; }
+.project-lifecycle p { margin: 8px 0; }
+.project-lifecycle > .toolbar { margin-bottom: 16px; }
+.project-lifecycle details { padding: 10px 0; }
+.project-lifecycle textarea { min-height: 100px; }
+.project-lifecycle label:has(input[type="checkbox"]) { display: flex; align-items: flex-start; gap: 8px; }
+.project-lifecycle input[type="checkbox"] { width: auto; min-width: 16px; margin: 4px 0; }
+
+/* Every page shares AppShell. Children must be allowed to shrink within grids. */
+.embedded-body { width: 100%; }
+.shell.embedded { min-height: 0; padding: 0; }
+.main-shell, .stack, .panel, .detail-grid > *, .split-2 > *, .split-3 > * { min-width: 0; }
+.page-heading, .panel-heading, .toolbar, .heading-actions { flex-wrap: wrap; }
+.panel > form, .panel > .form-help, .panel > .subtle, .panel > textarea, .panel > .inline-actions { margin: 16px; }
+.panel > form { padding: 4px; }
+input, select, textarea { min-width: 0; max-width: 100%; box-sizing: border-box; }
+pre { max-width: 100%; overflow: auto; }
+code, .mono-cell, .run-link, p { overflow-wrap: anywhere; }
+.table-scroll { overflow-x: auto; min-width: 0; }
+.modal { max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow: auto; }
+.success-banner { border: 1px solid #9bc8ab; background: #edf8f0; color: #235d36; padding: 14px 18px; display: flex; gap: 12px; margin-bottom: 16px; border-radius: 8px; }
+@media(max-width: 650px) { .toolbar { gap: 8px; } .kv { grid-template-columns: 1fr; } .page-heading > div, .panel-heading > * { max-width: 100%; } }

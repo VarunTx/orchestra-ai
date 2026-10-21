@@ -30,7 +30,7 @@ PREFIX = os.getenv('AGENT_PREFIX', '')
 
 def containers() -> list[dict]:
     result = subprocess.run(
-        ['docker', 'ps', '--format', '{{json .}}'],
+        ['docker', 'ps', '-a', '--format', '{{json .}}'],
         capture_output=True, text=True, check=True, timeout=20,
     )
     found = []

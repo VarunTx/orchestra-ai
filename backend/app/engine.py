@@ -12,7 +12,7 @@ class Engine:
 
     async def request(self, method: str, path: str, **kwargs):
         # Never retry mutations: an ambiguous response may already have started a workflow.
-        attempts = 3 if method == 'GET' else 1
+        attempts = 3 if method == 'GET' and not path.lstrip('/').startswith('tasks/poll/') else 1
         for attempt in range(attempts):
             try:
                 response = await self.client.request(method, path.lstrip('/'), **kwargs)

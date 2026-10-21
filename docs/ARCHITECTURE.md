@@ -86,7 +86,7 @@ Conductor is not used as the polling scheduler: checks are per-service and dynam
 | Adapter | API | Notes |
 | --- | --- | --- |
 | `RailwayConnector` | GraphQL `backboard.railway.app/graphql/v2` | `me.projects.services` inventory; no per-service health. Unverified without a real token. |
-| `GitHubConnector` | REST `api.github.com` | Repo metadata, commits, workflow runs → deployment events. Rate-limit aware. |
+| `GitHubConnector` | REST `api.github.com` | Repo metadata, commits, workflow runs → CI evidence. Rate-limit aware. |
 | Docker agent | Inbound `POST /api/agent/observations` | Token-authenticated per connector; services linked by `external_ref.agentKey`. |
 
 Credentials are AES-GCM sealed with a key derived from `SECRET_KEY` (HKDF-SHA256), and are never serialized into responses. Rotation re-seals the value and keeps the old one unreadable.
@@ -176,3 +176,29 @@ Additional definitions may be registered through `POST /api/workflows/definition
 - `scripts/docker_agent.py` pushes local container health from a machine that owns Docker.
 - `scripts/smoke.py` exercises the real engine; `scripts/recovery.py` is destructive and local-only.
 - CI runs typecheck, build, Compose up, backend tests, smoke, Playwright and recovery, then tears the stack down.
+
+
+## Project development lifecycle
+
+`lifecycle.py` adds application-owned project context, paired runner credentials (SHA-256 only), work requests, review approval and release evidence. Migration `0002_project_lifecycle.sql` preserves historical GitHub Actions rows with `evidence_kind=ci`; deployment lists and project deployment timestamps exclude them.
+
+`project_change` v1 has one `cp_project_code` task with zero retries, a 24-hour workflow/task timeout and 120-second response timeout. Every start uses a strict runner UUID task domain without fallback. A unique active-project reservation prevents concurrent coding runs; it is coordination metadata, not a second execution-state machine. Read interfaces retrieve execution status from Conductor. Ambiguous starts remain reserved and are reconciled by correlation ID, never blindly retried. Task polls are single-attempt despite using HTTP GET.
+
+The official Conductor Python SDK in `scripts/project_runner.py` reaches only `/api/runner/conductor/tasks/poll/cp_project_code` and `/api/runner/conductor/tasks`. The gateway authenticates the runner token, injects its task domain/worker ID, and validates project, workflow and task ownership. It exposes no arbitrary engine proxy. Heartbeats, runner evidence and cancellation acknowledgment also refresh last-seen evidence. A process-local file lock and SQLite journal prevent automatic duplicate agent launches across restarts. Unknown/orphan sessions require explicit local reconciliation.
+
+OpenCode runs in an isolated worktree/home with a restricted v2 configuration and macOS sandbox. Agent subprocesses receive only the model credential; check subprocesses receive none and have outbound networking denied. There is no listener on the laptop. Test command configuration is local and trusted. Raw transcripts stay local; bounded redacted evidence reaches the API. Terminal engine status alone does not release a delivered, potentially orphaned coding session: the runner must acknowledge stopping. Publication is a separate explicit local command and requires passing evidence, a clean exact approved commit and a completed workflow. Artifact changes atomically invalidate approval; approval locks the evidence row to avoid concurrent replacement races.
+
+New owner interfaces: `POST /api/projects/import-sunflower`; `GET /api/projects/{id}/lifecycle`; project-scoped runner pairing/revocation and work creation; `GET /api/work/{id}` and start/reconcile/cancel/approve actions; expected-release creation and verification. Runner interfaces accept only project-scoped credentials; owner sessions never reach the local agent. Service mappings are editable through existing service create/patch interfaces.
+
+Release verification reads a bounded version response plus readiness for every registered service. All SHAs must match and all checks pass. It never calls models, administrative APIs or deployment providers. Missing provenance remains unverified. D1/Gemini/n8n dependencies initially have no observation; no provider configuration is treated as availability evidence. Sunflower's existing authentication gap remains a real-user release blocker.
+
+
+## Stabilization interfaces (October 20, 2026)
+
+Application-owned execution associations retain project/work provenance when configuration is deleted. They store metadata only: status, tasks, retries and recovery remain in Conductor. History applies its access predicate before counts, filters and pagination; legacy unowned coding runs are hidden without deleting engine history. The current exact access-filter pass scans engine search pages and should be revisited for very large execution histories.
+
+`service_evidence` derives current freshness from monitoring enablement, last check time and the latest observation. Project totals, dashboard summaries, status filters and service lists share this read model. Persisted threshold state remains available as last known state. Project-scoped connections retain timestamped CI/PR evidence separately from deployment events and release verification.
+
+Coding uses `project_change` v1; publishing uses `project_publication` v1 with a distinct task and strict paired-runner domain. Both have zero automatic task retries. Owner work requests can remain editable drafts without a runner. Start/publication require recent companion preflight and their respective approvals. The companion supervises explicitly configured profiles; each profile uses the official SDK, separate credentials and a durable SQLite deduplication journal. Atomic reservation includes recovery identifiers. Publication replay reconciles GitHub by exact head SHA instead of repeating a write. General checks remain offline and cannot directly run deployment/database/publication commands.
+
+Only definitions registered through the audited safe validator are inspectable/runnable through the custom editor. Inputs and references are checked before Conductor start; task-type restrictions remain in force, and paid analysis/project coding retain their dedicated interfaces. Existing diagnostic workflow versions are unchanged.

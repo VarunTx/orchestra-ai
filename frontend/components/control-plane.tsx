@@ -1,5 +1,11 @@
 "use client";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   Activity,
   ArrowDown,
@@ -37,6 +43,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 import type { Definition, Run, Task, Infrastructure } from "@/lib/types";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -45,6 +52,8 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   const body = await r.json();
+  if (r.status === 401)
+    window.dispatchEvent(new Event("orchestra:session-expired"));
   if (!r.ok)
     throw new Error(
       r.status === 401
@@ -159,6 +168,30 @@ export default function ControlPlane({
   embedded?: boolean;
   initialView?: string;
 }) {
+  const router = useRouter();
+  const [refreshError, setRefreshError] = useState("");
+  const refreshRequest = useRef<AbortController | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => {
+      const id = new URLSearchParams(window.location.search).get("run");
+      setRunId(id);
+      setSelectedRun(null);
+      setTask(null);
+    };
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, []);
+  function selectRun(id: string | null) {
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("run", id);
+    else url.searchParams.delete("run");
+    window.history.pushState({}, "", url);
+    setRunId(id);
+    if (!id) setSelectedRun(null);
+    setTask(null);
+  }
   const [view, setView] = useState(initialView ?? "Overview");
   const [auth, setAuth] = useState<boolean | null>(null);
   const [token, setToken] = useState("");
@@ -171,9 +204,42 @@ export default function ControlPlane({
   const [selectedDef, setSelectedDef] = useState("incident_analysis");
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [task, setTask] = useState<Task | null>(null);
-  const [filter, setFilter] = useState("ALL");
-  const [offset, setOffset] = useState(0);
-  const [search, setSearch] = useState("");
+  const [filter, applyFilter] = useState("ALL");
+  const [offset, applyOffset] = useState(0);
+  const [search, applySearch] = useState("");
+  function updateQuery(key: string, value: string, reset = false) {
+    const url = new URL(window.location.href);
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+    if (reset) url.searchParams.set("start", "0");
+    window.history.pushState({}, "", url);
+  }
+  function setFilter(value: string) {
+    applyFilter(value);
+    applyOffset(0);
+    updateQuery("status", value, true);
+  }
+  function setOffset(value: number | ((n: number) => number)) {
+    const next = typeof value === "function" ? value(offset) : value;
+    applyOffset(next);
+    updateQuery("start", String(next));
+  }
+  function setSearch(value: string) {
+    applySearch(value);
+    applyOffset(0);
+    updateQuery("search", value, true);
+  }
+  useEffect(() => {
+    const read = () => {
+      const p = new URLSearchParams(window.location.search);
+      applyFilter(p.get("status") ?? "ALL");
+      applyOffset(Math.max(0, Number(p.get("start")) || 0));
+      applySearch(p.get("search") ?? "");
+    };
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, []);
   const [showJson, setShowJson] = useState(false);
   const [modal, setModal] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -181,15 +247,20 @@ export default function ControlPlane({
   const [terminateConfirm, setTerminateConfirm] = useState(false);
   const [runName, setRunName] = useState("diagnostic_pipeline");
   const refresh = useCallback(async () => {
+    refreshRequest.current?.abort();
+    const controller = new AbortController();
+    refreshRequest.current = controller;
     setLoading(true);
     try {
       const [defs, executions, health] = await Promise.allSettled([
-        api<Definition[]>("workflows"),
+        api<Definition[]>("workflows", { signal: controller.signal }),
         api<{ results: Run[]; totalHits: number }>(
-          `executions?size=20&start=${offset}&status=${filter}`,
+          `executions?size=20&start=${offset}&status=${filter}&search=${encodeURIComponent(search)}`,
+          { signal: controller.signal },
         ),
-        api<Infrastructure>("infrastructure"),
+        api<Infrastructure>("infrastructure", { signal: controller.signal }),
       ]);
+      if (controller.signal.aborted) return;
       const failed = [defs, executions, health].filter(
         (r) => r.status === "rejected",
       );
@@ -210,7 +281,7 @@ export default function ControlPlane({
       else setInfra(null);
       if ([defs, executions, health].some((r) => r.status === "fulfilled"))
         setAuth(true);
-      setError(
+      setRefreshError(
         failed.length
           ? "Some live data is unavailable. Displayed history may be stale; retrying automatically."
           : "",
@@ -222,11 +293,14 @@ export default function ControlPlane({
     } finally {
       setLoading(false);
     }
-  }, [offset, filter]);
+  }, [offset, filter, search]);
   useEffect(() => {
     refresh();
     const timer = setInterval(refresh, 5000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      refreshRequest.current?.abort();
+    };
   }, [refresh]);
   useEffect(() => {
     if (!modal && !terminateConfirm) return;
@@ -263,21 +337,27 @@ export default function ControlPlane({
       previous?.focus();
     };
   }, [modal, terminateConfirm, busy]);
-  const runId = selectedRun?.workflowId;
   useEffect(() => {
     if (!runId) return;
+    let live = true;
     const update = () =>
       api<Run>(`executions/${runId}`)
         .then((r) => {
+          if (!live) return;
           setSelectedRun(r);
           setTask((t) =>
             t ? (r.tasks?.find((x) => x.taskId === t.taskId) ?? null) : null,
           );
         })
-        .catch((e) => setError(e.message));
+        .catch((e) => {
+          if (live) setError(`Run evidence unavailable: ${e.message}`);
+        });
     update();
     const timer = setInterval(update, 3000);
-    return () => clearInterval(timer);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
   }, [runId]);
   useEffect(() => {
     if (!notice) return;
@@ -311,6 +391,7 @@ export default function ControlPlane({
   }
   async function start(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     const data = new FormData(e.currentTarget);
     try {
@@ -327,6 +408,7 @@ export default function ControlPlane({
       });
       setModal(false);
       setView("Executions");
+      selectRun(r.workflowId);
       setSelectedRun(await api<Run>(`executions/${r.workflowId}`));
       setTask(null);
       setNotice("Execution started in Conductor");
@@ -358,6 +440,19 @@ export default function ControlPlane({
     }
   }
   function navigate(page: string) {
+    if (embedded) {
+      router.push(
+        (
+          {
+            Overview: "/",
+            Workflows: "/workflows",
+            Executions: "/executions",
+            Infrastructure: "/infrastructure",
+          } as Record<string, string>
+        )[page] ?? "/",
+      );
+      return;
+    }
     setView(page);
     setSelectedRun(null);
     setTask(null);
@@ -371,7 +466,9 @@ export default function ControlPlane({
         <main className="content">
           <div className="error-banner" role="alert">
             <strong>Session expired</strong>
-            <span>Reload the page and sign in again to inspect executions.</span>
+            <span>
+              Reload the page and sign in again to inspect executions.
+            </span>
           </div>
         </main>
       );
@@ -446,129 +543,112 @@ export default function ControlPlane({
   return (
     <div className={embedded ? "shell embedded" : "shell"}>
       {!embedded && (
-      <aside className="sidebar">
-        <a className="brand" href="/" aria-label="Orchestra AI home">
-          <span className="brand-icon">
-            <Workflow size={22} />
-          </span>
-          Orchestra AI<span className="brand-period">.</span>
-        </a>
-        <div className="workspace">
-          <span className="workspace-icon">O</span>
-          <div>
-            <strong>Orchestra AI</strong>
-            <small>
-              {environment === "hosted"
-                ? "Hosted workspace"
-                : "Local workspace"}
-            </small>
-          </div>
-          <span className="workspace-badge">
-            {environment === "hosted" ? "LIVE" : "DEV"}
-          </span>
-        </div>
-        <div className="nav-label">WORKSPACE</div>
-        <nav>
-          {[
-            { label: "Overview", icon: LayoutDashboard },
-            { label: "Workflows", icon: GitBranch },
-            { label: "Executions", icon: Activity },
-            { label: "Infrastructure", icon: Server },
-          ].map(({ label, icon: Icon }) => (
-            <button
-              key={label}
-              className={view === label ? "nav-item active" : "nav-item"}
-              onClick={() => navigate(label)}
-            >
-              <Icon size={18} />
-              {label}
-              {label === "Workflows" && (
-                <span>{definitions.length || "—"}</span>
-              )}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-note">
-          <span className="sidebar-note-icon">
-            <Zap size={18} />
-          </span>
-          <strong>Built for the real world.</strong>
-          <p>
-            Durable execution.
-            <br />
-            Observable at every step.
-          </p>
-          <a
-            href="https://conductor-oss.github.io/conductor/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Conductor OSS docs <ArrowUpRight size={14} />
-          </a>
-        </div>
-        <div className="sidebar-bottom">
-          <span
-            className={`live-dot ${infra?.engine.status === "connected" ? "" : "offline"}`}
-          />
-          <div>
-            <strong>
-              {infra?.engine.status === "connected"
-                ? "Engine connected"
-                : "Engine unavailable"}
-            </strong>
-            <small>Conductor OSS · PostgreSQL</small>
-          </div>
-        </div>
-        <button
-          className="signout"
-          onClick={async () => {
-            await fetch("/api/session", { method: "DELETE" });
-            setAuth(false);
-            setRuns([]);
-            setSelectedRun(null);
-          }}
-        >
-          <LogOut size={14} /> Sign out
-        </button>
-      </aside>
-      )}
-      <div className="main-shell">
-        {!embedded && (
-        <header className="topbar">
-          <div>
-            <span>Workspace</span>
-            <ChevronRight size={14} />
-            <strong>{view}</strong>
-          </div>
-          <div className="topbar-right">
-            <span className="environment">
-              <span className="tiny-dot" />{" "}
-              {environment === "hosted"
-                ? "Hosted environment"
-                : "Local development"}
+        <aside className="sidebar">
+          <a className="brand" href="/" aria-label="Orchestra AI home">
+            <span className="brand-icon">
+              <Workflow size={22} />
             </span>
-            <span className="avatar">OA</span>
+            Orchestra AI<span className="brand-period">.</span>
+          </a>
+          <div className="workspace">
+            <span className="workspace-icon">O</span>
+            <div>
+              <strong>Orchestra AI</strong>
+              <small>
+                {environment === "hosted"
+                  ? "Hosted workspace"
+                  : "Local workspace"}
+              </small>
+            </div>
+            <span className="workspace-badge">
+              {environment === "hosted" ? "LIVE" : "DEV"}
+            </span>
           </div>
-        </header>
+          <div className="nav-label">WORKSPACE</div>
+          <nav>
+            {[
+              { label: "Overview", icon: LayoutDashboard },
+              { label: "Workflows", icon: GitBranch },
+              { label: "Executions", icon: Activity },
+              { label: "Infrastructure", icon: Server },
+            ].map(({ label, icon: Icon }) => (
+              <button
+                key={label}
+                className={view === label ? "nav-item active" : "nav-item"}
+                onClick={() => navigate(label)}
+              >
+                <Icon size={18} />
+                {label}
+                {label === "Workflows" && (
+                  <span>{definitions.length || "—"}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-note">
+            <span className="sidebar-note-icon">
+              <Zap size={18} />
+            </span>
+            <strong>Built for the real world.</strong>
+            <p>
+              Durable execution.
+              <br />
+              Observable at every step.
+            </p>
+            <a
+              href="https://conductor-oss.github.io/conductor/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Conductor OSS docs <ArrowUpRight size={14} />
+            </a>
+          </div>
+          <div className="sidebar-bottom">
+            <span
+              className={`live-dot ${infra?.engine.status === "connected" ? "" : "offline"}`}
+            />
+            <div>
+              <strong>
+                {infra?.engine.status === "connected"
+                  ? "Engine connected"
+                  : "Engine unavailable"}
+              </strong>
+              <small>Conductor OSS · PostgreSQL</small>
+            </div>
+          </div>
+          <button
+            className="signout"
+            onClick={async () => {
+              await fetch("/api/session", { method: "DELETE" });
+              setAuth(false);
+              setRuns([]);
+              setSelectedRun(null);
+            }}
+          >
+            <LogOut size={14} /> Sign out
+          </button>
+        </aside>
+      )}
+      <div className={embedded ? "embedded-body" : "main-shell"}>
+        {!embedded && (
+          <header className="topbar">
+            <div>
+              <span>Workspace</span>
+              <ChevronRight size={14} />
+              <strong>{view}</strong>
+            </div>
+            <div className="topbar-right">
+              <span className="environment">
+                <span className="tiny-dot" />{" "}
+                {environment === "hosted"
+                  ? "Hosted environment"
+                  : "Local development"}
+              </span>
+              <span className="avatar">OA</span>
+            </div>
+          </header>
         )}
         <main className="content">
-          {embedded && (
-            <div className="toolbar" style={{ marginBottom: 14 }}>
-              {["Overview", "Workflows", "Executions", "Infrastructure"].map((name) => (
-                <button
-                  key={name}
-                  className={
-                    view === name
-                      ? "button button-primary button-small"
-                      : "button button-outline button-small"
-                  }
-                  onClick={() => navigate(name)}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-          )}
           <div className="page-heading">
             <div>
               <div className="eyebrow">
@@ -576,7 +656,7 @@ export default function ControlPlane({
               </div>
               <h1>
                 {selectedRun
-                  ? "Execution detail"
+                  ? "Run details"
                   : view === "Overview"
                     ? "Your orchestration, in focus."
                     : view === "Workflows"
@@ -601,7 +681,7 @@ export default function ControlPlane({
                 setModal(true);
               }}
             >
-              <Plus size={17} /> Run workflow
+              <Plus size={17} /> Run automation
             </Button>
           </div>
           {error && (
@@ -624,16 +704,20 @@ export default function ControlPlane({
               <h3>Connecting to your control plane…</h3>
             </div>
           )}
+          {refreshError && (
+            <p className="subtle" role="status">
+              {refreshError}
+            </p>
+          )}
           {selectedRun ? (
             <>
               <button
                 className="back-link"
                 onClick={() => {
-                  setSelectedRun(null);
-                  setTask(null);
+                  selectRun(null);
                 }}
               >
-                <ChevronLeft size={15} /> Back to executions
+                <ChevronLeft size={15} /> Back to runs
               </button>
               <section className="panel execution-title">
                 <div>
@@ -648,6 +732,58 @@ export default function ControlPlane({
                     <Status value={selectedRun.status} />
                   </h2>
                   <code>{selectedRun.workflowId}</code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={async () => {
+                      if (busy) return;
+                      setBusy(true);
+                      try {
+                        await api(
+                          `executions/${selectedRun.workflowId}/record-kind`,
+                          {
+                            method: "PATCH",
+                            body: JSON.stringify({
+                              record_kind:
+                                selectedRun.association?.record_kind ===
+                                "verification"
+                                  ? "project"
+                                  : "verification",
+                            }),
+                          },
+                        );
+                        setSelectedRun(
+                          await api<Run>(
+                            `executions/${selectedRun.workflowId}`,
+                          ),
+                        );
+                        setNotice("Run label saved");
+                      } catch (e) {
+                        setError((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    {selectedRun.association?.record_kind === "verification"
+                      ? "Mark as project run"
+                      : "Mark as verification"}
+                  </Button>
+                  {selectedRun.association && (
+                    <p>
+                      {selectedRun.association.project_name} ·{" "}
+                      {selectedRun.association.purpose}{" "}
+                      {selectedRun.association.record_kind === "verification"
+                        ? "· verification record"
+                        : ""}
+                      {!selectedRun.association.project_id &&
+                        ["coding", "publication"].includes(
+                          selectedRun.association.purpose,
+                        ) &&
+                        " · project configuration no longer exists"}
+                    </p>
+                  )}
                   <button
                     aria-label="Copy execution ID"
                     className="icon-button"
@@ -663,15 +799,17 @@ export default function ControlPlane({
                 </div>
                 <div className="execution-actions">
                   <span>Started {date(selectedRun.startTime)}</span>
-                  {["FAILED", "TIMED_OUT"].includes(selectedRun.status) && (
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => action("retry")}
-                    >
-                      <RefreshCw size={15} /> Retry execution
-                    </Button>
-                  )}
+                  {["FAILED", "TIMED_OUT"].includes(selectedRun.status) &&
+                    selectedRun.workflowType !== "project_change" &&
+                    selectedRun.workflowName !== "project_change" && (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => action("retry")}
+                      >
+                        <RefreshCw size={15} /> Retry execution
+                      </Button>
+                    )}
                   {selectedRun.status === "RUNNING" && (
                     <Button
                       variant="destructive"
@@ -949,9 +1087,7 @@ export default function ControlPlane({
                   <div className="panel-heading">
                     <div className="heading-inline">
                       <h2>
-                        {view === "Overview"
-                          ? "Recent executions"
-                          : "Execution history"}
+                        {view === "Overview" ? "Recent runs" : "Run history"}
                       </h2>
                       <span className="count">{total}</span>
                     </div>
@@ -977,8 +1113,8 @@ export default function ControlPlane({
                       <div className="search">
                         <Search size={16} />
                         <input
-                          aria-label="Search current page"
-                          placeholder="Search this page by workflow or ID…"
+                          aria-label="Search runs"
+                          placeholder="Search all runs by automation or ID…"
                           value={search}
                           onChange={(e) => setSearch(e.target.value)}
                         />
@@ -1019,63 +1155,51 @@ export default function ControlPlane({
                         </tr>
                       </thead>
                       <tbody>
-                        {runs
-                          .filter((r) =>
-                            (r.workflowType + " " + r.workflowId)
-                              .toLowerCase()
-                              .includes(search.toLowerCase()),
-                          )
-                          .map((r) => (
-                            <tr key={r.workflowId}>
-                              <td>
-                                <button
-                                  className="run-link"
-                                  onClick={async () => {
-                                    try {
-                                      setSelectedRun(
-                                        await api<Run>(
-                                          `executions/${r.workflowId}`,
-                                        ),
-                                      );
-                                      setTask(null);
-                                    } catch (e) {
-                                      setError((e as Error).message);
-                                    }
-                                  }}
-                                >
-                                  <span className="table-icon">
-                                    {r.workflowType === "incident_analysis" ? (
-                                      <Sparkles size={16} />
-                                    ) : (
-                                      <Workflow size={16} />
+                        {runs.map((r) => (
+                          <tr key={r.workflowId}>
+                            <td>
+                              <button
+                                className="run-link"
+                                aria-label={`Open run ${nice(r.workflowType ?? "automation")} ${r.workflowId}`}
+                                onClick={() => selectRun(r.workflowId)}
+                              >
+                                <span className="table-icon">
+                                  {r.workflowType === "incident_analysis" ? (
+                                    <Sparkles size={16} />
+                                  ) : (
+                                    <Workflow size={16} />
+                                  )}
+                                </span>
+                                <span className="run-label">
+                                  {r.association?.record_kind ===
+                                    "verification" && (
+                                    <span className="tag">verification</span>
+                                  )}
+                                  <strong>
+                                    {nice(
+                                      r.workflowType || r.workflowName || "",
                                     )}
-                                  </span>
-                                  <span>
-                                    <strong>
-                                      {nice(
-                                        r.workflowType || r.workflowName || "",
-                                      )}
-                                    </strong>
-                                    <code>{r.workflowId.slice(0, 18)}…</code>
-                                  </span>
-                                </button>
-                              </td>
-                              <td>
-                                <Status value={r.status} />
-                              </td>
-                              <td className="subtle">{date(r.startTime)}</td>
-                              <td className="mono subtle">
-                                {r.executionTime != null
-                                  ? `${(r.executionTime / 1000).toFixed(1)}s`
-                                  : r.endTime
-                                    ? `${((new Date(r.endTime).getTime() - new Date(r.startTime).getTime()) / 1000).toFixed(1)}s`
-                                    : "In progress"}
-                              </td>
-                              <td>
-                                <ArrowUpRight size={16} />
-                              </td>
-                            </tr>
-                          ))}
+                                  </strong>
+                                  <code>{r.workflowId.slice(0, 18)}…</code>
+                                </span>
+                              </button>
+                            </td>
+                            <td>
+                              <Status value={r.status} />
+                            </td>
+                            <td className="subtle">{date(r.startTime)}</td>
+                            <td className="mono subtle">
+                              {r.executionTime != null
+                                ? `${(r.executionTime / 1000).toFixed(1)}s`
+                                : r.endTime
+                                  ? `${((new Date(r.endTime).getTime() - new Date(r.startTime).getTime()) / 1000).toFixed(1)}s`
+                                  : "In progress"}
+                            </td>
+                            <td>
+                              <ArrowUpRight size={16} />
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1341,7 +1465,7 @@ export default function ControlPlane({
                   }
                 >
                   <Play size={15} />
-                  {busy ? "Starting…" : "Start execution"}
+                  {busy ? "Starting…" : "Start run"}
                 </Button>
               </div>
             </form>

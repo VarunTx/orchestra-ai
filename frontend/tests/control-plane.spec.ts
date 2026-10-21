@@ -17,6 +17,8 @@ async function signIn(page: Page) {
 
 test("unauthenticated API and origin checks", async ({ request }) => {
   expect((await request.get("/api/executions")).status()).toBe(401);
+  expect((await request.get("/api/notifications")).status()).toBe(401);
+  expect((await request.put("/api/connectors/11111111-1111-4111-8111-111111111111/projects",{data:{project_ids:[]}})).status()).toBe(403);
   expect((await request.get("/api/projects")).status()).toBe(401);
   expect(
     (await request.post("/api/session", { data: { credential: token } })).status(),
@@ -35,14 +37,18 @@ test("register a project, observe real health, and follow an incident to recover
 
   await page.goto("/projects/new");
   await page.getByLabel("Project name").fill(name);
-  await page
-    .getByLabel("Description")
-    .fill("Deterministic browser verification project");
+  await page.getByLabel("GitHub repository").fill("https://github.com/example/browser-test");
+  await page.getByRole("button", {name:"Continue",exact:true}).click();
+  await page.getByRole("button", {name:"Continue",exact:true}).click();
+  await page.getByRole("button", {name:"Add service",exact:true}).click();
   await page.getByLabel("Service name").fill("Browser API");
   await page.getByLabel("Health endpoint").fill("https://example.com");
+  await page.getByRole("button", {name:"Continue",exact:true}).click();
+  await page.getByRole("button", {name:"Continue",exact:true}).click();
   await page.getByRole("button", { name: "Create project" }).click();
 
-  await expect(page.getByRole("heading", { name })).toBeVisible();
+  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { name,exact:true })).toBeVisible();
   const projectId = new URL(page.url()).pathname.split("/").pop()!;
   await page.screenshot({ path: "../docs/screenshots/project.png", fullPage: true });
 
@@ -102,20 +108,27 @@ test("real Conductor executions, definitions, workers and mobile layout", async 
   await page.goto("/executions");
   await expect(page.getByRole("heading", { name: "Every run. Every detail." })).toBeVisible();
 
-  await page.getByRole("button", { name: "Run workflow", exact: true }).click();
+  await page.getByRole("button", { name: "Run automation", exact: true }).click();
   await page.getByLabel("Service", { exact: true }).fill("browser-smoke");
   await page.getByLabel("Failure testing").selectOption("once");
-  await page.getByRole("button", { name: "Start execution" }).click();
-  await expect(page.getByRole("heading", { name: "Execution detail" })).toBeVisible();
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(page.getByRole("heading", { name: "Run details" })).toBeVisible();
   await expect(page.locator(".execution-title .status")).toHaveText("completed", {
     timeout: 60000,
   });
   await expect(page.locator(".task-row")).toHaveCount(4);
+  await expect(page).toHaveURL(/run=/);
+  await page.reload();
+  await expect(page.getByRole("heading", {name:"Run details"})).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", {name:"Every run. Every detail."})).toBeVisible();
+  await page.goForward();
+  await expect(page.getByRole("heading", {name:"Run details"})).toBeVisible();
   await page.getByRole("button", { name: "Inspect analyze" }).click();
   await expect(page.locator(".inspector")).toContainText("deterministic");
   await page.screenshot({ path: "../docs/screenshots/execution.png", fullPage: true });
 
-  await page.getByRole("link", { name: "Workflows", exact: true }).click();
+  await page.getByRole("link", { name: "Automations", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Designed to keep moving." })).toBeVisible();
   await page.getByRole("button", { name: "View JSON" }).click();
   await expect(page.locator("pre")).toContainText("incident_analysis");
@@ -124,7 +137,7 @@ test("real Conductor executions, definitions, workers and mobile layout", async 
   await expect(page.getByText("Engine telemetry")).toBeVisible();
   await page.screenshot({ path: "../docs/screenshots/workflows.png", fullPage: true });
 
-  await page.getByRole("button", { name: "Infrastructure", exact: true }).click();
+  await page.getByRole("link", { name: "Infrastructure", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Python worker fleet" })).toBeVisible();
   await expect(page.locator(".worker-row .status-polling")).toHaveCount(4);
   await page.screenshot({ path: "../docs/screenshots/infrastructure.png", fullPage: true });

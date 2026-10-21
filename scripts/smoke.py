@@ -8,7 +8,7 @@ client=httpx.Client(base_url=os.getenv('API_URL','http://127.0.0.1:8000'), heade
 
 
 def start(mode='none', delay=0):
-    r=client.post('/api/executions',json={'name':'diagnostic_pipeline','service':'smoke-test','severity':'high',
+    r=client.post('/api/executions',json={'name':'diagnostic_pipeline','record_kind':'verification','service':'smoke-test','severity':'high',
                   'logs':'Synthetic smoke test\nERROR upstream timeout\nINFO recovery probe', 'failure_mode':mode,'delay_seconds':delay})
     r.raise_for_status()
     return r.json()['workflowId']

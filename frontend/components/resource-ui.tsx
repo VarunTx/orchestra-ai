@@ -25,7 +25,9 @@ const KNOWN = new Set([
 export function Status({ value }: { value: string }) {
   const key = value.toLowerCase().replaceAll(" ", "_");
   return (
-    <span className={`status ${KNOWN.has(key) ? `status-${key}` : "status-unknown"}`}>
+    <span
+      className={`status ${KNOWN.has(key) ? `status-${key}` : "status-unknown"}`}
+    >
       <span />
       {value.replaceAll("_", " ").toLowerCase()}
     </span>
@@ -55,17 +57,32 @@ export function PageHeading({
   );
 }
 
-export function ErrorBanner({ message }: { message: string | null }) {
+export function ErrorBanner({
+  message,
+  success = false,
+}: {
+  message: string | null;
+  success?: boolean;
+}) {
   if (!message) return null;
   return (
-    <div className="error-banner" role="alert">
-      <strong>Request failed</strong>
+    <div
+      className={success ? "success-banner" : "error-banner"}
+      role={success ? "status" : "alert"}
+    >
+      <strong>{success ? "Done" : "Request failed"}</strong>
       <span>{message}</span>
     </div>
   );
 }
 
-export function Empty({ title, children }: { title: string; children: ReactNode }) {
+export function Empty({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <div className="empty">
       <h3>{title}</h3>
@@ -74,7 +91,11 @@ export function Empty({ title, children }: { title: string; children: ReactNode 
   );
 }
 
-export function Loading({ label = "Loading observations…" }: { label?: string }) {
+export function Loading({
+  label = "Loading observations…",
+}: {
+  label?: string;
+}) {
   return <p className="subtle loading-line">{label}</p>;
 }
 
@@ -91,7 +112,10 @@ export function when(value: string | null | undefined) {
 
 export function ago(value: string | null | undefined) {
   if (!value) return "never";
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+  const seconds = Math.max(
+    0,
+    Math.round((Date.now() - new Date(value).getTime()) / 1000),
+  );
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
@@ -100,10 +124,14 @@ export function ago(value: string | null | undefined) {
 
 export function duration(value: string | null | undefined) {
   if (!value) return "—";
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+  const seconds = Math.max(
+    0,
+    Math.round((Date.now() - new Date(value).getTime()) / 1000),
+  );
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+  if (seconds < 86400)
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
   return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
 }
 
@@ -115,14 +143,36 @@ export function ProjectLink({ id, name }: { id: string; name: string }) {
   );
 }
 
-export function Counts({ project }: { project: { healthy_count: number; degraded_count: number; down_count: number; unknown_count: number; disabled_count: number } }) {
+export function Counts({
+  project,
+}: {
+  project: {
+    healthy_count: number;
+    degraded_count: number;
+    down_count: number;
+    unknown_count: number;
+    disabled_count: number;
+  };
+}) {
   return (
     <span className="counts">
-      {project.healthy_count > 0 && <span className="count count-healthy">{project.healthy_count} up</span>}
-      {project.degraded_count > 0 && <span className="count count-degraded">{project.degraded_count} degraded</span>}
-      {project.down_count > 0 && <span className="count count-down">{project.down_count} down</span>}
-      {project.unknown_count > 0 && <span className="count">{project.unknown_count} unknown</span>}
-      {project.disabled_count > 0 && <span className="count">{project.disabled_count} unmonitored</span>}
+      {project.healthy_count > 0 && (
+        <span className="count count-healthy">{project.healthy_count} up</span>
+      )}
+      {project.degraded_count > 0 && (
+        <span className="count count-degraded">
+          {project.degraded_count} degraded
+        </span>
+      )}
+      {project.down_count > 0 && (
+        <span className="count count-down">{project.down_count} down</span>
+      )}
+      {project.unknown_count > 0 && (
+        <span className="count">{project.unknown_count} unknown</span>
+      )}
+      {project.disabled_count > 0 && (
+        <span className="count">{project.disabled_count} unmonitored</span>
+      )}
     </span>
   );
 }

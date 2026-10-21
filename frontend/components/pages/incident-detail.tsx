@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 
 export default function IncidentDetail({ id }: { id: string }) {
   const { data, error, loading, reload } = useApi<Incident>(`incidents/${id}`, { pollMs: 10000 });
+  const [success, setSuccess] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [workflow, setWorkflow] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -24,9 +25,10 @@ export default function IncidentDetail({ id }: { id: string }) {
   async function act(path: string, body: Record<string, unknown>, note: string) {
     setBusy(true);
     setMessage(null);
+    setSuccess(false);
     try {
       await api(path, { method: "POST", body: JSON.stringify(body) });
-      setMessage(note);
+      setMessage(note); setSuccess(true);
       await reload();
     } catch (exception) {
       setMessage((exception as ApiError).message);
@@ -48,6 +50,7 @@ export default function IncidentDetail({ id }: { id: string }) {
     if (!data) return;
     setBusy(true);
     setMessage(null);
+    setSuccess(false);
     try {
       const evidence = [
         `Incident ${data.title} on ${data.service_name} (${data.project_name}).`,
@@ -68,7 +71,7 @@ export default function IncidentDetail({ id }: { id: string }) {
         }),
       });
       setWorkflow(result.workflowId);
-      setMessage("Deterministic diagnostics started in Conductor");
+      setMessage("Deterministic diagnostics started in Conductor"); setSuccess(true);
     } catch (exception) {
       setMessage((exception as ApiError).message);
     } finally {
@@ -112,7 +115,7 @@ export default function IncidentDetail({ id }: { id: string }) {
           </>
         }
       />
-      <ErrorBanner message={error ?? message} />
+      <ErrorBanner message={message ?? error} success={!!message && success} />
       <div className="stack">
         <section className="panel">
           <div className="panel-heading">

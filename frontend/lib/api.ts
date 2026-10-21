@@ -21,21 +21,36 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     body = text;
   }
   if (!response.ok) {
-    const detail =
+    const raw =
       body && typeof body === "object" && "detail" in body
-        ? String((body as { detail: unknown }).detail)
-        : `Request failed (${response.status})`;
-    if (response.status === 401)
+        ? (body as { detail: unknown }).detail
+        : null;
+    const detail = Array.isArray(raw)
+      ? raw
+          .map(
+            (e: { loc?: unknown[]; msg?: string }) =>
+              `${e.loc?.slice(1).join(".") ?? "Input"}: ${e.msg ?? "Invalid value"}`,
+          )
+          .join("; ")
+      : typeof raw === "string"
+        ? raw
+        : `Request failed (${response.status}). Retry or check Infrastructure.`;
+    if (response.status === 401) {
+      window.dispatchEvent(new Event("orchestra:session-expired"));
       throw new ApiError("Your session expired. Sign in again.", 401);
+    }
     throw new ApiError(detail, response.status);
   }
   return body as T;
 }
 
-export function query(params: Record<string, string | number | undefined | null>) {
+export function query(
+  params: Record<string, string | number | undefined | null>,
+) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== "") search.set(key, String(value));
+    if (value !== undefined && value !== null && value !== "")
+      search.set(key, String(value));
   }
   const encoded = search.toString();
   return encoded ? `?${encoded}` : "";

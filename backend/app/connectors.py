@@ -79,7 +79,8 @@ class ConnectorError(RuntimeError):
 @dataclass
 class ProviderSnapshot:
     services: list[dict] = field(default_factory=list)
-    deployments: list[dict] = field(default_factory=list)
+    ci_runs: list[dict] = field(default_factory=list)
+    pull_requests: list[dict] = field(default_factory=list)
     notes: str = ''
 
 
@@ -188,6 +189,9 @@ class GitHubConnector:
         return response.json()
 
     async def validate(self) -> dict:
+        if not self.token:
+            await self._get('/rate_limit')
+            return {'account': 'Public repositories (unauthenticated)'}
         user = await self._get('/user')
         return {'account': user.get('login', 'unknown')}
 
@@ -207,10 +211,8 @@ class GitHubConnector:
         repo = self.repo_path(repo_url)
         meta = await self._get(f'/repos/{repo}')
         commits = await self._get(f'/repos/{repo}/commits?per_page=10')
-        try:
-            runs = await self._get(f'/repos/{repo}/actions/runs?per_page=10')
-        except ConnectorError:
-            runs = {'workflow_runs': []}
+        runs = await self._get(f'/repos/{repo}/actions/runs?per_page=10')
+        pulls = await self._get(f'/repos/{repo}/pulls?state=all&per_page=20')
         deployments = []
         for run in (runs.get('workflow_runs') or []):
             deployments.append({
@@ -223,7 +225,8 @@ class GitHubConnector:
                 'detail': {'workflow': run.get('name'), 'event': run.get('event')},
             })
         return ProviderSnapshot(
-            deployments=deployments,
+            ci_runs=deployments,
+            pull_requests=[{'number':p.get('number'),'title':p.get('title'),'state':p.get('state'),'draft':p.get('draft'),'url':p.get('html_url'),'head_sha':(p.get('head') or {}).get('sha'),'updated_at':p.get('updated_at')} for p in pulls],
             notes=f"{meta.get('full_name')}: default branch {meta.get('default_branch')}, "
                   f"{len(commits)} recent commits, {len(deployments)} workflow runs. "
                   f"Latest commit {commits[0]['sha'][:7] if commits else 'none'}.",

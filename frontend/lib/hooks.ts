@@ -10,34 +10,41 @@ export type Resource<T> = {
 };
 
 /** Small data hook: explicit loading/error state, optional polling, no retries that hide failures. */
-export function useApi<T>(path: string | null, options?: { pollMs?: number }): Resource<T> {
+export function useApi<T>(
+  path: string | null,
+  options?: { pollMs?: number },
+): Resource<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(path));
-  const mounted = useRef(true);
+  const request = useRef<AbortController | null>(null);
   const pollMs = options?.pollMs;
 
   const reload = useCallback(async () => {
     if (!path) return;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
     try {
-      const result = await api<T>(path);
-      if (!mounted.current) return;
+      const result = await api<T>(path, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setData(result);
       setError(null);
     } catch (exception) {
-      if (!mounted.current) return;
+      if (controller.signal.aborted) return;
       setError((exception as ApiError).message);
     } finally {
-      if (mounted.current) setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [path]);
 
   useEffect(() => {
-    mounted.current = true;
+    setData(null);
+    setError(null);
     setLoading(true);
     void reload();
     return () => {
-      mounted.current = false;
+      request.current?.abort();
     };
   }, [reload]);
 

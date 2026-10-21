@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .connectors import ConnectorError, GitHubConnector, RailwayConnector
 from .monitor import check_service
-from .store import Store
+from .store import Store, serialize
 
 SERVICE_KINDS = Literal['web', 'api', 'database', 'worker', 'queue', 'cache', 'external']
 ENV_KINDS = Literal['development', 'staging', 'production', 'custom']
@@ -27,6 +27,8 @@ def _clean_url(value: str | None) -> str | None:
     if len(value) > 2048:
         raise ValueError('URL is too long')
     parts = urlsplit(value)
+    if parts.username or parts.password:
+        raise ValueError('Credentials must not be embedded in URLs')
     if parts.scheme not in ('http', 'https') or not parts.hostname:
         raise ValueError('URL must be an absolute http or https URL')
     return value
@@ -86,19 +88,42 @@ class ProjectIn(BaseModel):
     def _repo(cls, value: str | None) -> str | None:
         if not value:
             return None
-        value = value.strip()
-        if not (value.startswith(('https://github.com/', 'git@github.com:', 'http://github.com/'))):
-            raise ValueError('Repository must be a github.com URL')
+        value = value.strip().removesuffix('.git').replace('git@github.com:','https://github.com/').replace('http://github.com/','https://github.com/').rstrip('/')
+        if not __import__('re').fullmatch(r'https://github[.]com/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+',value) or value.rsplit('/',1)[-1] in {'.','..'}:
+            raise ValueError('Repository must be a github.com owner/repository URL')
         return value
 
 
 class ProjectPatch(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    record_kind: Literal['project','verification'] | None = None
     name: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=1000)
     cluster_id: uuid.UUID | None = None
     repo_url: str | None = Field(default=None, max_length=300)
     repo_branch: str | None = Field(default=None, max_length=120)
+
+
+class ResourceRef(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    provider: str | None = Field(default=None, max_length=40)
+    script: str | None = Field(default=None, max_length=160)
+    owner: str | None = Field(default=None, max_length=80)
+    source_path: str | None = Field(default=None, max_length=200)
+    version_url: str | None = None
+    readiness_url: str | None = None
+    health_scope: str | None = Field(default=None, max_length=200)
+    agentKey: str | None = Field(default=None, max_length=80)
+    externalId: str | None = Field(default=None, max_length=200)
+    projectId: str | None = Field(default=None, max_length=200)
+
+    @field_validator('version_url', 'readiness_url')
+    @classmethod
+    def mapping_url(cls, value):
+        value = _clean_url(value)
+        if value and (urlsplit(value).username or urlsplit(value).password):
+            raise ValueError('Credentials must not be embedded in resource mappings')
+        return value
 
 
 class ServicePatch(BaseModel):
@@ -107,6 +132,8 @@ class ServicePatch(BaseModel):
     kind: SERVICE_KINDS | None = None
     provider: Literal['http', 'railway', 'github', 'docker', 'manual'] | None = None
     health_url: str | None = None
+    external_ref: ResourceRef | None = None
+    connector_id: uuid.UUID | None = None
     environment_id: uuid.UUID | None = None
     monitoring_enabled: bool | None = None
     check_interval_seconds: int | None = Field(default=None, ge=15, le=86400)
@@ -126,6 +153,8 @@ class ServiceCreate(BaseModel):
     kind: SERVICE_KINDS = 'web'
     provider: Literal['http', 'railway', 'github', 'docker', 'manual'] = 'http'
     health_url: str | None = None
+    external_ref: ResourceRef = Field(default_factory=ResourceRef)
+    connector_id: uuid.UUID | None = None
     monitoring_enabled: bool = True
     check_interval_seconds: int = Field(default=60, ge=15, le=86400)
     timeout_seconds: int = Field(default=10, ge=1, le=60)
@@ -176,8 +205,24 @@ class ConnectorIn(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     provider: Literal['railway', 'github', 'docker']
     name: str = Field(min_length=1, max_length=80)
-    token: str = Field(min_length=8, max_length=500)
+    token: str = Field(default="", max_length=500)
+    project_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
     config: dict = Field(default_factory=dict)
+
+
+class ConnectionScope(BaseModel):
+    project_ids: list[uuid.UUID] = Field(max_length=100)
+
+
+class DefinitionRun(BaseModel):
+    record_kind: Literal['project','verification'] = 'project'
+    model_config = ConfigDict(extra='forbid')
+    inputs: dict = Field(default_factory=dict)
+
+
+class InventoryLink(BaseModel):
+    project_id: uuid.UUID
+    external_id: str = Field(min_length=1,max_length=200)
 
 
 class ConnectorPatch(BaseModel):
@@ -302,6 +347,8 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
 
     @router.delete('/projects/{project_id}', status_code=204, dependencies=[owner])
     async def delete_project(project_id: uuid.UUID):
+        if store.db.one('SELECT id FROM project_work WHERE project_id=%s AND active',(project_id,)):
+            raise HTTPException(409,'Cancel and reconcile active project work before deleting its configuration')
         if not store.delete_project(project_id):
             raise not_found('Project')
 
@@ -318,9 +365,9 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
 
     # -- services ----------------------------------------------------------
     @router.get('/services', dependencies=[owner])
-    async def services(project_id: str | None = None, environment_id: str | None = None,
+    async def services(project_id: uuid.UUID | None = None, environment_id: uuid.UUID | None = None,
                        status: str | None = None, q: str | None = None):
-        return store.list_services(project_id=project_id, environment_id=environment_id,
+        return store.list_services(project_id=str(project_id) if project_id else None, environment_id=str(environment_id) if environment_id else None,
                                    status=status, search=q)
 
     @router.post('/services', status_code=201, dependencies=[owner])
@@ -328,6 +375,8 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
         payload = body.model_dump()
         if not store.get_project(payload['project_id']):
             raise not_found('Project')
+        if payload.get('environment_id') and not store.db.one('SELECT id FROM environments WHERE id=%s AND project_id=%s',(payload['environment_id'],payload['project_id'])):
+            raise HTTPException(422,'Environment must belong to this project')
         return store.create_service(payload)
 
     @router.get('/services/{service_id}', dependencies=[owner])
@@ -339,8 +388,11 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
 
     @router.patch('/services/{service_id}', dependencies=[owner])
     async def patch_service(service_id: uuid.UUID, body: ServicePatch):
-        if not store.get_service(service_id):
+        service=store.get_service(service_id)
+        if not service:
             raise not_found('Service')
+        if body.environment_id and not store.db.one('SELECT id FROM environments WHERE id=%s AND project_id=%s',(body.environment_id,service['project_id'])):
+            raise HTTPException(422,'Environment must belong to this project')
         return store.update_service(service_id, body.model_dump(exclude_unset=True))
 
     @router.delete('/services/{service_id}', status_code=204, dependencies=[owner])
@@ -415,6 +467,10 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
         return updated
 
     # -- alerts ------------------------------------------------------------
+    @router.get('/notifications', dependencies=[owner])
+    async def notifications():
+        return [serialize(r) for r in store.db.query('SELECT n.*,a.name AS alert_name FROM notifications n LEFT JOIN alerts a ON a.id=n.alert_id ORDER BY n.created_at DESC LIMIT 100')]
+
     @router.get('/alerts', dependencies=[owner])
     async def alerts():
         return store.list_alerts()
@@ -431,17 +487,28 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
     # -- connectors --------------------------------------------------------
     @router.get('/connectors', dependencies=[owner])
     async def connectors():
-        return [json_public_connector(r) for r in store.db.query(
-            'SELECT * FROM connectors ORDER BY provider, name')]
+        rows=store.db.query('SELECT * FROM connectors ORDER BY provider,name')
+        return [{**json_public_connector(r),'project_ids':[str(p['project_id']) for p in store.db.query('SELECT project_id FROM project_connections WHERE connector_id=%s',(r['id'],))]} for r in rows]
 
     @router.post('/connectors', status_code=201, dependencies=[owner])
     async def create_connector(body: ConnectorIn):
+        if body.provider != 'github' and len(body.token) < 8:
+            raise HTTPException(422, 'This provider requires a credential of at least 8 characters')
+        for pid in set(body.project_ids):
+            if not store.get_project(pid):
+                raise not_found('Project')
+        if set(body.config) - {'credential_type'}:
+            raise HTTPException(422, 'Unsupported connector configuration')
+        if body.config.get('credential_type', 'account') not in {'account', 'project'}:
+            raise HTTPException(422, 'Choose account or project credential type')
         sealed = store.secrets.seal(body.token)
         row = store.db.one(
             'INSERT INTO connectors (id, provider, name, config, credentials, status)'
-            " VALUES (%s, %s, %s, %s, %s, 'connected') RETURNING *",
+            " VALUES (%s, %s, %s, %s, %s, 'unconfigured') RETURNING *",
             (uuid.uuid4(), body.provider, body.name.strip(), Jsonb(body.config), sealed),
         )
+        for pid in set(body.project_ids):
+            store.db.execute('INSERT INTO project_connections(project_id,connector_id) VALUES (%s,%s)', (pid,row['id']))
         store.audit('owner', 'connector.create', 'connector', row['id'], {'provider': body.provider})
         return json_public_connector(row)
 
@@ -455,7 +522,7 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
         if 'token' in fields:
             updates.append('credentials = %s')
             params.append(store.secrets.seal(fields['token']))
-            updates.append("status = 'connected'")
+            updates.append("status = 'unconfigured', last_validated_at = NULL")
         if not updates:
             raise HTTPException(422, 'Nothing to update')
         row = store.db.one(
@@ -475,10 +542,36 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
     def connector_client(row: dict):
         token = store.secrets.open(row['credentials'])
         if row['provider'] == 'railway':
-            return RailwayConnector(token, row['config'].get('endpoint'))
+            if row['config'].get('credential_type') == 'project':
+                raise HTTPException(409, 'Project tokens cannot use account inventory. Use an account token for discovery, or link project services manually; no provider changes are made.')
+            return RailwayConnector(token)
         if row['provider'] == 'github':
-            return GitHubConnector(token, row['config'].get('endpoint'))
+            return GitHubConnector(token)
         return None
+
+    @router.put('/connectors/{connector_id}/projects', dependencies=[owner])
+    async def scope_connector(connector_id: uuid.UUID, body: ConnectionScope):
+        if not store.db.one('SELECT id FROM connectors WHERE id=%s', (connector_id,)):
+            raise not_found('Connector')
+        with store.db.transaction() as conn:
+            for pid in set(body.project_ids):
+                if not conn.execute('SELECT id FROM projects WHERE id=%s', (pid,)).fetchone():
+                    raise not_found('Project')
+            conn.execute('DELETE FROM project_connections WHERE connector_id=%s', (connector_id,))
+            for pid in set(body.project_ids):
+                conn.execute('INSERT INTO project_connections(project_id,connector_id) VALUES (%s,%s)', (pid,connector_id))
+        return {'project_ids': [str(p) for p in body.project_ids]}
+
+    @router.post('/connectors/{connector_id}/link', dependencies=[owner])
+    async def link_inventory(connector_id: uuid.UUID, body: InventoryLink):
+        row = store.db.one('SELECT * FROM connectors WHERE id=%s', (connector_id,))
+        if not row or not store.get_project(body.project_id):
+            raise not_found('Project or connector')
+        candidate = next((r for r in row['config'].get('inventory', []) if r.get('externalId') == body.external_id), None)
+        if not candidate:
+            raise HTTPException(422, 'Sync and select a discovered resource first')
+        return store.create_service({'project_id': body.project_id, 'name': candidate['name'], 'provider': row['provider'], 'kind':'web', 'connector_id':connector_id,
+            'monitoring_enabled': False, 'external_ref': {'externalId':body.external_id,'projectId':candidate.get('projectId')}})
 
     @router.post('/connectors/{connector_id}/validate', dependencies=[owner])
     async def validate_connector(connector_id: uuid.UUID):
@@ -520,18 +613,22 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
                     (Jsonb({'inventory': snapshot.services, 'notes': snapshot.notes}), connector_id))
             else:
                 projects = [p for p in store.db.query(
-                    'SELECT id, repo_url FROM projects WHERE repo_url IS NOT NULL')]
+                    'SELECT p.id, p.repo_url FROM projects p JOIN project_connections c ON c.project_id=p.id WHERE c.connector_id=%s AND p.repo_url IS NOT NULL', (connector_id,))]
+                if not projects:
+                    raise HTTPException(409,'Select at least one project in this connection scope before syncing GitHub')
                 notes = []
                 for project in projects:
                     snapshot = await client.collect_repo(project['repo_url'])
                     notes.append(snapshot.notes)
-                    for deployment in snapshot.deployments:
+                    store.db.execute('UPDATE project_connections SET evidence=%s,checked_at=now() WHERE project_id=%s AND connector_id=%s', (Jsonb({'notes':snapshot.notes,'pull_requests':snapshot.pull_requests}),project['id'],connector_id))
+                    for deployment in snapshot.ci_runs:
                         deployment.setdefault('status', 'unknown')
                         result = store.create_deployment({
                             'project_id': project['id'],
                             'environment_id': None,
                             'service_id': None,
                             'provider': 'github',
+                            'evidence_kind': 'ci',
                             'external_id': deployment['externalId'],
                             'version': deployment.get('version'),
                             'commit_sha': deployment.get('commitSha', ''),
@@ -550,14 +647,14 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
                 "UPDATE connectors SET status = 'error', last_error = %s, updated_at = now() WHERE id = %s",
                 (str(exc)[:300], connector_id))
             raise HTTPException(502, str(exc))
-        store.audit('owner', 'connector.sync', 'connector', connector_id, {'deployments': created})
-        return {'status': 'synced', 'deployments_recorded': created}
+        store.audit('owner', 'connector.sync', 'connector', connector_id, {'ci_runs': created})
+        return {'status': 'synced', 'deployments_recorded': 0, 'ci_runs_recorded': created}
 
     # -- agent ingest (token-authenticated, separate from owner sessions) ---
     @router.post('/agent/observations')
     async def agent_observation(body: AgentObservationIn, x_agent_token: str = Header(default='')):
         connectors = store.db.query(
-            "SELECT * FROM connectors WHERE provider = 'docker' AND status <> 'unconfigured'")
+            "SELECT * FROM connectors WHERE provider = 'docker'")
         matched = None
         for connector in connectors:
             try:
@@ -568,6 +665,7 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
                 continue
         if not matched:
             raise HTTPException(401, 'A valid agent token is required')
+        store.db.execute("UPDATE connectors SET status='connected',last_sync_at=now() WHERE id=%s",(matched['id'],))
         service = store.db.one(
             "SELECT * FROM services WHERE connector_id = %s AND external_ref->>'agentKey' = %s",
             (matched['id'], body.agent_key))
@@ -596,6 +694,8 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
         if unknown:
             raise HTTPException(422, f'unsupported definition keys: {sorted(unknown)}')
         name = definition.get('name')
+        if name in {'project_change','project_publication','incident_analysis','diagnostic_pipeline'}:
+            raise HTTPException(422, 'Managed workflow names use their dedicated interfaces')
         if not isinstance(name, str) or not NAME.match(name):
             raise HTTPException(422, 'name must be lowercase letters, digits or underscore')
         if not isinstance(definition.get('version'), int) or not 1 <= definition['version'] <= 100:
@@ -626,6 +726,29 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
             raise HTTPException(422, 'inputParameters must be lowercase identifiers')
         if not isinstance(definition.get('outputParameters', {}), dict):
             raise HTTPException(422, 'outputParameters must be an object')
+        import re, json
+        if len(json.dumps(definition)) > 50000:
+            raise HTTPException(422,'Definition exceeds 50 KB')
+        def validate_references(value, prior):
+            if isinstance(value,dict):
+                for v in value.values(): validate_references(v,prior)
+            elif isinstance(value,list):
+                for v in value: validate_references(v,prior)
+            elif isinstance(value,str) and '${' in value:
+                root=re.fullmatch(r'\$\{workflow[.]input[.]([a-zA-Z0-9_]+)(?:[.][a-zA-Z0-9_]+)*\}',value)
+                task_ref=re.fullmatch(r'\$\{([a-zA-Z0-9_]+)[.]output(?:[.][a-zA-Z0-9_]+)*\}',value)
+                if not (root and root[1] in parameters) and not (task_ref and task_ref[1] in prior):
+                    raise HTTPException(422,'References must use declared workflow inputs or outputs of preceding tasks')
+        prior=set()
+        required={'cp_normalize_incident':{'service','severity','logs'},'cp_diagnose_incident':{'incident'},'cp_analyze_incident':{'incident'},'cp_publish_report':{'incident','analysis'}}
+        for task in tasks:
+            inputs=task.get('inputParameters',{})
+            if not isinstance(inputs,dict) or not required[task['name']].issubset(inputs):
+                raise HTTPException(422,f"Missing worker inputs for {task['name']}")
+            validate_references(inputs,prior)
+            prior.add(task['taskReferenceName'])
+        validate_references(definition.get('outputParameters',{}),prior)
+
         definition.setdefault('ownerEmail', 'operator@conductor.local')
         definition.setdefault('restartable', True)
         definition.setdefault('timeoutPolicy', 'TIME_OUT_WF')
@@ -641,10 +764,45 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
                     existing.get('version') == definition['version']:
                 raise HTTPException(409, 'That name and version already exists; register a new version')
         await engine.request('PUT', 'metadata/workflow', json=[definition])
+        store.db.execute('INSERT INTO registered_definitions(name,version) VALUES (%s,%s) ON CONFLICT DO NOTHING', (definition['name'],definition['version']))
         store.audit('owner', 'workflow.register', 'workflow',
                     f"{definition['name']}@{definition['version']}",
                     {'tasks': [t['name'] for t in definition['tasks']]})
         return {'registered': True, 'name': definition['name'], 'version': definition['version']}
+
+    @router.get('/workflows/definitions/{name}/{version}', dependencies=[owner])
+    async def inspect_definition(name: str, version: int):
+        if not store.db.one('SELECT name FROM registered_definitions WHERE name=%s AND version=%s',(name,version)):
+            raise not_found('Permitted definition')
+        definition = await engine.request('GET',f'metadata/workflow/{name}',params={'version':version})
+        return validate_definition({k:v for k,v in definition.items() if k in SAFE_DEFINITION_KEYS})
+
+    @router.post('/workflows/definitions/{name}/{version}/run', dependencies=[owner], status_code=201)
+    async def run_definition(name: str, version: int, body: DefinitionRun):
+        definition = await inspect_definition(name,version)
+        if any(t['name']=='cp_analyze_incident' for t in definition['tasks']):
+            raise HTTPException(409, 'Paid analysis uses the dedicated approved incident workflow')
+        expected = set(definition.get('inputParameters',[]))
+        if set(body.inputs) != expected or len(__import__('json').dumps(body.inputs))>20000:
+            raise HTTPException(422,'Provide exactly the declared input parameters (maximum 20 KB)')
+        # Worker contracts are validated before the engine accepts any task.
+        if 'incident' in body.inputs:
+            incident=body.inputs['incident']
+            if not isinstance(incident,dict) or not isinstance(incident.get('service'),str) or not isinstance(incident.get('logs'),str):
+                raise HTTPException(422,'incident requires service and logs strings')
+        if 'logs' in body.inputs and (not isinstance(body.inputs['logs'],str) or not 1 <= len(body.inputs['logs']) <= 20000):
+            raise HTTPException(422,'logs must be a nonempty string up to 20000 characters')
+        if 'service' in body.inputs and (not isinstance(body.inputs['service'],str) or not 1 <= len(body.inputs['service']) <= 100):
+            raise HTTPException(422,'service must be a nonempty string up to 100 characters')
+        if 'severity' in body.inputs and body.inputs['severity'] not in ['critical','high','medium','low']:
+            raise HTTPException(422,'Choose critical, high, medium or low severity')
+        start={'name':name,'version':version,'input':body.inputs}
+        if settings.task_domain:
+            start['taskToDomain']={'*':f'{settings.task_domain}, NO_DOMAIN'}
+        wid=await engine.request('POST','workflow',json=start)
+        store.db.execute("INSERT INTO execution_links(workflow_id,project_name,purpose,record_kind) VALUES (%s,%s,'automation',%s)",(wid,name,body.record_kind))
+        store.audit('owner','workflow.start','workflow',wid,{'name':name,'version':version})
+        return {'workflowId':wid}
 
     # -- audit and settings ------------------------------------------------
     @router.get('/audit', dependencies=[owner])

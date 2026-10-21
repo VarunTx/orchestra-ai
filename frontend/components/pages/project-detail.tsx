@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import ProjectLifecycle from "@/components/pages/project-lifecycle";
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
@@ -17,17 +18,25 @@ import {
 import { Button } from "@/components/ui/button";
 
 export default function ProjectDetail({ id }: { id: string }) {
-  const { data, error, loading, reload } = useApi<Project>(`projects/${id}`, { pollMs: 15000 });
+  const { data, error, loading, reload } = useApi<Project>(`projects/${id}`, {
+    pollMs: 15000,
+  });
   const clusters = useApi<Cluster[]>("clusters");
+  const [success, setSuccess] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function act(action: () => Promise<unknown>, note?: string) {
+    if (busy) return;
     setBusy(true);
     setMessage(null);
+    setSuccess(false);
     try {
       await action();
-      if (note) setMessage(note);
+      if (note) {
+        setMessage(note);
+        setSuccess(true);
+      }
       await reload();
     } catch (exception) {
       setMessage((exception as ApiError).message);
@@ -37,8 +46,11 @@ export default function ProjectDetail({ id }: { id: string }) {
   }
 
   async function check(service: Service) {
-    await act(async () => api(`services/${service.id}/check`, { method: "POST", body: "{}" }),
-      `Checked ${service.name}`);
+    await act(
+      async () =>
+        api(`services/${service.id}/check`, { method: "POST", body: "{}" }),
+      `Checked ${service.name}`,
+    );
   }
 
   async function addService(event: FormEvent<HTMLFormElement>) {
@@ -54,8 +66,12 @@ export default function ProjectDetail({ id }: { id: string }) {
           name: data.get("name"),
           kind: data.get("kind"),
           health_url: String(data.get("health_url") ?? "").trim() || null,
-          monitoring_enabled: Boolean(String(data.get("health_url") ?? "").trim()),
-          check_interval_seconds: Number(data.get("check_interval_seconds") ?? 60),
+          monitoring_enabled: Boolean(
+            String(data.get("health_url") ?? "").trim(),
+          ),
+          check_interval_seconds: Number(
+            data.get("check_interval_seconds") ?? 60,
+          ),
           failure_threshold: Number(data.get("failure_threshold") ?? 2),
         }),
       });
@@ -70,7 +86,10 @@ export default function ProjectDetail({ id }: { id: string }) {
     await act(async () => {
       await api(`projects/${id}/environments`, {
         method: "POST",
-        body: JSON.stringify({ name: data.get("name"), kind: data.get("kind") }),
+        body: JSON.stringify({
+          name: data.get("name"),
+          kind: data.get("kind"),
+        }),
       });
       form.reset();
     }, "Environment added");
@@ -86,7 +105,11 @@ export default function ProjectDetail({ id }: { id: string }) {
   if (!data)
     return (
       <main className="content">
-        <PageHeading eyebrow="PROJECTS" title="Project not found" description="It may have been deleted." />
+        <PageHeading
+          eyebrow="PROJECTS"
+          title="Project not found"
+          description="It may have been deleted."
+        />
         <ErrorBanner message={error} />
         <Link className="button button-outline" href="/projects">
           Back to projects
@@ -112,8 +135,9 @@ export default function ProjectDetail({ id }: { id: string }) {
           </>
         }
       />
-      <ErrorBanner message={error ?? message} />
+      <ErrorBanner message={message ?? error} success={!!message && success} />
       <div className="stack">
+        <ProjectLifecycle projectId={id} />
         <section className="panel">
           <div className="panel-heading">
             <h2>Project facts</h2>
@@ -133,16 +157,24 @@ export default function ProjectDetail({ id }: { id: string }) {
               )}
             </dd>
             <dt>Environments</dt>
-            <dd>{(data.environments ?? []).map((env) => `${env.name} (${env.kind})`).join(", ") || "none"}</dd>
+            <dd>
+              {(data.environments ?? [])
+                .map((env) => `${env.name} (${env.kind})`)
+                .join(", ") || "none"}
+            </dd>
             <dt>Services</dt>
             <dd>
-              {data.service_count} total · {data.healthy_count} healthy · {data.down_count} down ·{" "}
-              {data.unknown_count} unknown
+              {data.service_count} total · {data.healthy_count} healthy ·{" "}
+              {data.down_count} down · {data.unknown_count} unknown
             </dd>
             <dt>Open incidents</dt>
             <dd>{data.open_incidents}</dd>
             <dt>Last deployment</dt>
-            <dd>{data.last_deployed_at ? when(data.last_deployed_at) : "never recorded"}</dd>
+            <dd>
+              {data.last_deployed_at
+                ? when(data.last_deployed_at)
+                : "never recorded"}
+            </dd>
           </dl>
           <form
             className="inline-form"
@@ -156,12 +188,12 @@ export default function ProjectDetail({ id }: { id: string }) {
                     method: "PATCH",
                     body: JSON.stringify({ cluster_id: value || null }),
                   }),
-                "Cluster updated",
+                "Project group updated",
               );
             }}
           >
             <label>
-              Move to cluster
+              Move to project group
               <select name="cluster_id" defaultValue={data.cluster_id ?? ""}>
                 <option value="">Unassigned</option>
                 {(clusters.data ?? []).map((cluster) => (
@@ -180,7 +212,9 @@ export default function ProjectDetail({ id }: { id: string }) {
         <section className="panel">
           <div className="panel-heading">
             <h2>Edit project</h2>
-            <span className="subtle">persisted through PATCH /api/projects</span>
+            <span className="subtle">
+              persisted through PATCH /api/projects
+            </span>
           </div>
           <form
             className="inline-form"
@@ -194,8 +228,14 @@ export default function ProjectDetail({ id }: { id: string }) {
                     body: JSON.stringify({
                       name: values.get("name"),
                       description: values.get("description") ?? "",
-                      repo_url: String(values.get("repo_url") ?? "").trim() || null,
-                      repo_branch: String(values.get("repo_branch") ?? "").trim() || null,
+                      repo_url:
+                        String(values.get("repo_url") ?? "").trim() || null,
+                      repo_branch:
+                        String(values.get("repo_branch") ?? "").trim() || null,
+                      record_kind:
+                        values.get("verification") === "on"
+                          ? "verification"
+                          : "project",
                     }),
                   }),
                 "Project updated",
@@ -204,19 +244,44 @@ export default function ProjectDetail({ id }: { id: string }) {
           >
             <label>
               Name
-              <input name="name" defaultValue={data.name} required maxLength={80} />
+              <input
+                name="name"
+                defaultValue={data.name}
+                required
+                maxLength={80}
+              />
             </label>
             <label>
               Description
-              <input name="description" defaultValue={data.description} maxLength={1000} />
+              <input
+                name="description"
+                defaultValue={data.description}
+                maxLength={1000}
+              />
             </label>
             <label>
               Repository
-              <input name="repo_url" defaultValue={data.repo_url ?? ""} placeholder="https://github.com/owner/repo" />
+              <input
+                name="repo_url"
+                defaultValue={data.repo_url ?? ""}
+                placeholder="https://github.com/owner/repo"
+              />
             </label>
             <label>
               Branch
-              <input name="repo_branch" defaultValue={data.repo_branch ?? ""} placeholder="main" />
+              <input
+                name="repo_branch"
+                defaultValue={data.repo_branch ?? ""}
+                placeholder="main"
+              />
+            </label>
+            <label className="checkbox-row">
+              <input
+                name="verification"
+                type="checkbox"
+                defaultChecked={data.record_kind === "verification"}
+              />
+              Verification record (preserve history)
             </label>
             <Button type="submit" variant="outline" disabled={busy}>
               Save
@@ -226,13 +291,13 @@ export default function ProjectDetail({ id }: { id: string }) {
 
         <section className="panel">
           <div className="panel-heading">
-            <h2>Services</h2>
+            <h2 id="services">Services</h2>
             <span className="subtle">real observations only</span>
           </div>
           {services.length === 0 ? (
             <Empty title="No services registered">
-              Add a service below. A health URL enables automatic monitoring; without one the
-              service stays explicitly unknown.
+              Add a service below. A health URL enables automatic monitoring;
+              without one the service stays explicitly unknown.
             </Empty>
           ) : (
             <div className="table-scroll">
@@ -252,19 +317,32 @@ export default function ProjectDetail({ id }: { id: string }) {
                   {services.map((service) => (
                     <tr key={service.id}>
                       <td>
-                        <strong>{service.name}</strong>
-                        <div className="subtle mono-cell">{service.health_url ?? "no health URL"}</div>
+                        <Link
+                          className="run-link"
+                          href={`/services/${service.id}`}
+                        >
+                          <strong>{service.name}</strong>
+                        </Link>
+                        <div className="subtle mono-cell">
+                          {service.health_url ?? "no health URL"}
+                        </div>
                       </td>
                       <td>{service.kind}</td>
                       <td>{service.environment_name ?? "—"}</td>
                       <td>
                         <Status value={service.current_status} />
                         {service.consecutive_failures > 0 && (
-                          <div className="subtle">{service.consecutive_failures} fails in a row</div>
+                          <div className="subtle">
+                            {service.consecutive_failures} fails in a row
+                          </div>
                         )}
                       </td>
-                      <td className="mono-cell">{ago(service.last_checked_at)}</td>
-                      <td className="mono-cell">{service.check_interval_seconds}s</td>
+                      <td className="mono-cell">
+                        {ago(service.last_checked_at)}
+                      </td>
+                      <td className="mono-cell">
+                        {service.check_interval_seconds}s
+                      </td>
                       <td>
                         <div className="inline-actions">
                           <button
@@ -283,10 +361,13 @@ export default function ProjectDetail({ id }: { id: string }) {
                                   api(`services/${service.id}`, {
                                     method: "PATCH",
                                     body: JSON.stringify({
-                                      monitoring_enabled: !service.monitoring_enabled,
+                                      monitoring_enabled:
+                                        !service.monitoring_enabled,
                                     }),
                                   }),
-                                service.monitoring_enabled ? "Monitoring disabled" : "Monitoring enabled",
+                                service.monitoring_enabled
+                                  ? "Monitoring disabled"
+                                  : "Monitoring enabled",
                               )
                             }
                           >
@@ -297,7 +378,10 @@ export default function ProjectDetail({ id }: { id: string }) {
                             disabled={busy}
                             onClick={() =>
                               void act(
-                                () => api(`services/${service.id}`, { method: "DELETE" }),
+                                () =>
+                                  api(`services/${service.id}`, {
+                                    method: "DELETE",
+                                  }),
                                 "Service deleted",
                               )
                             }
@@ -312,15 +396,32 @@ export default function ProjectDetail({ id }: { id: string }) {
               </table>
             </div>
           )}
-          <form className="inline-form" onSubmit={addService} style={{ marginTop: 14 }}>
+          <form
+            className="inline-form"
+            onSubmit={addService}
+            style={{ marginTop: 14 }}
+          >
             <label>
               Service name
-              <input name="name" required maxLength={80} placeholder="Payments worker" />
+              <input
+                name="name"
+                required
+                maxLength={80}
+                placeholder="Payments worker"
+              />
             </label>
             <label>
               Kind
               <select name="kind" defaultValue="web">
-                {["web", "api", "database", "worker", "queue", "cache", "external"].map((kind) => (
+                {[
+                  "web",
+                  "api",
+                  "database",
+                  "worker",
+                  "queue",
+                  "cache",
+                  "external",
+                ].map((kind) => (
                   <option key={kind} value={kind}>
                     {kind}
                   </option>
@@ -329,7 +430,10 @@ export default function ProjectDetail({ id }: { id: string }) {
             </label>
             <label>
               Environment
-              <select name="environment_id" defaultValue={data.environments?.[0]?.id ?? ""}>
+              <select
+                name="environment_id"
+                defaultValue={data.environments?.[0]?.id ?? ""}
+              >
                 <option value="">none</option>
                 {(data.environments ?? []).map((env) => (
                   <option key={env.id} value={env.id}>
@@ -340,15 +444,30 @@ export default function ProjectDetail({ id }: { id: string }) {
             </label>
             <label>
               Health URL
-              <input name="health_url" placeholder="https://example.com/healthz" />
+              <input
+                name="health_url"
+                placeholder="https://example.com/healthz"
+              />
             </label>
             <label>
               Interval (s)
-              <input name="check_interval_seconds" type="number" min={15} max={86400} defaultValue={60} />
+              <input
+                name="check_interval_seconds"
+                type="number"
+                min={15}
+                max={86400}
+                defaultValue={60}
+              />
             </label>
             <label>
               Failure threshold
-              <input name="failure_threshold" type="number" min={1} max={20} defaultValue={2} />
+              <input
+                name="failure_threshold"
+                type="number"
+                min={1}
+                max={20}
+                defaultValue={2}
+              />
             </label>
             <Button type="submit" disabled={busy}>
               Add service
@@ -365,7 +484,9 @@ export default function ProjectDetail({ id }: { id: string }) {
               </Link>
             </div>
             {(data.incidents ?? []).length === 0 ? (
-              <Empty title="No incidents recorded">Incidents appear when a check crosses its failure threshold.</Empty>
+              <Empty title="No incidents recorded">
+                Incidents appear when a check crosses its failure threshold.
+              </Empty>
             ) : (
               <div className="timeline">
                 {(data.incidents ?? []).map((incident) => (
@@ -373,7 +494,10 @@ export default function ProjectDetail({ id }: { id: string }) {
                     <time>{when(incident.opened_at)}</time>
                     <Status value={incident.status} />
                     <div>
-                      <Link className="run-link" href={`/incidents/${incident.id}`}>
+                      <Link
+                        className="run-link"
+                        href={`/incidents/${incident.id}`}
+                      >
                         <strong>{incident.title}</strong>
                       </Link>
                       <div className="subtle">
@@ -394,7 +518,8 @@ export default function ProjectDetail({ id }: { id: string }) {
             </div>
             {(data.deployments ?? []).length === 0 ? (
               <Empty title="No deployments recorded">
-                Deployments come from a GitHub connector sync or the deployments API.
+                Record deployments after your hosting provider deploys. CI runs
+                appear separately in Changes.
               </Empty>
             ) : (
               <div className="timeline">
@@ -426,21 +551,34 @@ export default function ProjectDetail({ id }: { id: string }) {
                 {env.name} · {env.kind} · {env.service_count} services
               </span>
             ))}
-            {(data.environments ?? []).length === 0 && <span className="subtle">No environments yet.</span>}
+            {(data.environments ?? []).length === 0 && (
+              <span className="subtle">No environments yet.</span>
+            )}
           </div>
-          <form className="inline-form" onSubmit={addEnvironment} style={{ marginTop: 14 }}>
+          <form
+            className="inline-form"
+            onSubmit={addEnvironment}
+            style={{ marginTop: 14 }}
+          >
             <label>
               New environment
-              <input name="name" required maxLength={60} placeholder="preview" />
+              <input
+                name="name"
+                required
+                maxLength={60}
+                placeholder="preview"
+              />
             </label>
             <label>
               Kind
               <select name="kind" defaultValue="custom">
-                {["development", "staging", "production", "custom"].map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kind}
-                  </option>
-                ))}
+                {["development", "staging", "production", "custom"].map(
+                  (kind) => (
+                    <option key={kind} value={kind}>
+                      {kind}
+                    </option>
+                  ),
+                )}
               </select>
             </label>
             <Button type="submit" disabled={busy}>

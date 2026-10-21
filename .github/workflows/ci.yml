@@ -28,6 +28,7 @@ jobs:
       - run: docker compose up -d --build --wait --wait-timeout 240
       # The API and tests share the private Compose network; the database is never published.
       - run: docker compose run --rm --no-deps -v "${{ github.workspace }}/backend:/app" api python -m pytest tests -q
+      - run: docker compose run --rm --no-deps -v "${{ github.workspace }}/scripts:/scripts:ro" api python -m pytest /scripts/tests -q -p no:cacheprovider
       - run: python scripts/smoke.py
       - run: npx playwright install --with-deps chromium
         working-directory: frontend

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 export default function DeploymentsPage() {
   const { data, error, loading, reload } = useApi<Deployment[]>("deployments?limit=100", { pollMs: 30000 });
   const projects = useApi<Project[]>("projects");
+  const [success, setSuccess] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function record(event: FormEvent<HTMLFormElement>) {
@@ -30,7 +31,7 @@ export default function DeploymentsPage() {
         }),
       });
       form.reset();
-      setMessage("Deployment recorded");
+      setMessage("Deployment recorded. Verify its commit in the project Releases tab."); setSuccess(true);
       await reload();
     } catch (exception) {
       setMessage((exception as ApiError).message);
@@ -42,21 +43,21 @@ export default function DeploymentsPage() {
       <PageHeading
         eyebrow="CONTROL PLANE / DEPLOYMENTS"
         title="What shipped, and when."
-        description="Deployments are recorded events from provider syncs or explicit writes. Nothing here is inferred."
+        description="Deployments are recorded events from historical recordss or explicit writes. Nothing here is inferred."
         actions={
           <Button variant="outline" onClick={() => void reload()}>
             Refresh
           </Button>
         }
       />
-      <ErrorBanner message={error ?? message} />
+      <ErrorBanner message={message ?? error} success={!!message && success} />
       <div className="stack">
         <section className="panel">
           {loading && !data ? (
             <Loading />
           ) : (data ?? []).length === 0 ? (
             <Empty title="No deployments recorded">
-              Add a GitHub connector on Integrations and sync, or record a manual deployment below.
+              Record a manual deployment event below. GitHub Actions checks appear under project Changes; verify deployed commits under Releases.
             </Empty>
           ) : (
             <div className="table-scroll">

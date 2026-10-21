@@ -116,10 +116,10 @@ class Store:
         rows = self.db.query(
             'SELECT c.*,'
             ' (SELECT count(*) FROM projects p WHERE p.cluster_id = c.id) AS project_count,'
-            ' (SELECT count(*) FROM services s JOIN projects p ON p.id = s.project_id'
+            ' (SELECT count(*) FROM service_evidence s JOIN projects p ON p.id = s.project_id'
             '    WHERE p.cluster_id = c.id) AS service_count,'
-            ' (SELECT count(*) FROM services s JOIN projects p ON p.id = s.project_id'
-            "    WHERE p.cluster_id = c.id AND s.current_status = 'down') AS down_count,"
+            ' (SELECT count(*) FROM service_evidence s JOIN projects p ON p.id = s.project_id'
+            "    WHERE p.cluster_id = c.id AND s.effective_status = 'down') AS down_count,"
             ' (SELECT count(*) FROM incidents i JOIN projects p ON p.id = i.project_id'
             '    WHERE p.cluster_id = c.id AND i.resolved_at IS NULL) AS open_incidents'
             ' FROM clusters c ORDER BY c.kind = \'logical\', c.name'
@@ -158,18 +158,23 @@ class Store:
         return deleted
 
     # -- projects ----------------------------------------------------------
-    PROJECT_LIST = """
-        SELECT p.*, c.name AS cluster_name, c.kind AS cluster_kind,
-          (SELECT count(*) FROM services s WHERE s.project_id = p.id) AS service_count,
-          (SELECT count(*) FROM services s WHERE s.project_id = p.id AND s.current_status = 'healthy') AS healthy_count,
-          (SELECT count(*) FROM services s WHERE s.project_id = p.id AND s.current_status = 'degraded') AS degraded_count,
-          (SELECT count(*) FROM services s WHERE s.project_id = p.id AND s.current_status = 'down') AS down_count,
-          (SELECT count(*) FROM services s WHERE s.project_id = p.id
-             AND (s.current_status = 'unknown' OR (s.monitoring_enabled AND
-                  (s.last_checked_at IS NULL OR s.last_checked_at < now() - make_interval(secs => s.check_interval_seconds * 3))))) AS unknown_count,
-          (SELECT count(*) FROM services s WHERE s.project_id = p.id AND NOT s.monitoring_enabled) AS disabled_count,
+    PROJECT_STATUS = """CASE
+      WHEN NOT EXISTS(SELECT 1 FROM services s WHERE s.project_id=p.id AND monitoring_enabled) THEN 'disabled'
+      WHEN EXISTS(SELECT 1 FROM service_evidence s WHERE s.project_id=p.id AND effective_status='down') THEN 'down'
+      WHEN EXISTS(SELECT 1 FROM service_evidence s WHERE s.project_id=p.id AND effective_status='degraded') THEN 'degraded'
+      WHEN EXISTS(SELECT 1 FROM service_evidence s WHERE s.project_id=p.id AND effective_status='unknown') THEN 'unknown'
+      WHEN EXISTS(SELECT 1 FROM service_evidence s WHERE s.project_id=p.id AND effective_status='healthy') THEN 'healthy'
+      ELSE 'unknown' END"""
+    PROJECT_LIST = f"""
+        SELECT p.*, {PROJECT_STATUS} AS status, c.name AS cluster_name, c.kind AS cluster_kind,
+          (SELECT count(*) FROM service_evidence s WHERE s.project_id = p.id) AS service_count,
+          (SELECT count(*) FROM service_evidence s WHERE s.project_id = p.id AND s.effective_status = 'healthy') AS healthy_count,
+          (SELECT count(*) FROM service_evidence s WHERE s.project_id = p.id AND s.effective_status = 'degraded') AS degraded_count,
+          (SELECT count(*) FROM service_evidence s WHERE s.project_id = p.id AND s.effective_status = 'down') AS down_count,
+          (SELECT count(*) FROM service_evidence s WHERE s.project_id = p.id AND s.effective_status = 'unknown') AS unknown_count,
+          (SELECT count(*) FROM service_evidence s WHERE s.project_id = p.id AND NOT s.monitoring_enabled) AS disabled_count,
           (SELECT count(*) FROM incidents i WHERE i.project_id = p.id AND i.resolved_at IS NULL) AS open_incidents,
-          (SELECT max(d.deployed_at) FROM deployments d WHERE d.project_id = p.id) AS last_deployed_at,
+          (SELECT max(d.deployed_at) FROM deployments d WHERE d.project_id = p.id AND d.evidence_kind = 'deployment') AS last_deployed_at,
           (SELECT count(*) FROM environments e WHERE e.project_id = p.id) AS environment_count
         FROM projects p LEFT JOIN clusters c ON c.id = p.cluster_id
     """
@@ -184,7 +189,7 @@ class Store:
             clauses.append('EXISTS (SELECT 1 FROM environments e WHERE e.project_id = p.id AND e.slug = %s)')
             params.append(environment)
         if status:
-            clauses.append('p.status = %s')
+            clauses.append(self.PROJECT_STATUS + ' = %s')
             params.append(status)
         if search:
             clauses.append('(p.name ILIKE %s OR p.description ILIKE %s)')
@@ -244,7 +249,7 @@ class Store:
 
     def update_project(self, project_id: uuid.UUID, fields: dict) -> dict | None:
         allowed = {k: v for k, v in fields.items() if k in
-                   ('name', 'description', 'cluster_id', 'repo_url', 'repo_branch')}
+                   ('name', 'description', 'cluster_id', 'repo_url', 'repo_branch', 'record_kind')}
         if allowed:
             sets = ', '.join(f'{k} = %s' for k in allowed)
             self.db.execute(
@@ -307,11 +312,11 @@ class Store:
 
     # -- services ----------------------------------------------------------
     SERVICE_LIST = """
-        SELECT s.*, p.name AS project_name, p.cluster_id, e.name AS environment_name,
+        SELECT s.*, s.current_status AS last_known_status, s.effective_status AS current_status, p.name AS project_name, p.cluster_id, e.name AS environment_name,
           e.kind AS environment_kind,
           (SELECT count(*) FROM observations o WHERE o.service_id = s.id
              AND o.observed_at > now() - interval '24 hours') AS observations_24h
-        FROM services s
+        FROM service_evidence s
         JOIN projects p ON p.id = s.project_id
         LEFT JOIN environments e ON e.id = s.environment_id
     """
@@ -327,7 +332,7 @@ class Store:
             clauses.append('s.environment_id = %s')
             params.append(uuid.UUID(environment_id))
         if status:
-            clauses.append('s.current_status = %s')
+            clauses.append('s.effective_status = %s')
             params.append(status)
         if search:
             clauses.append('(s.name ILIKE %s OR p.name ILIKE %s)')
@@ -368,7 +373,7 @@ class Store:
     def update_service(self, service_id: uuid.UUID, fields: dict) -> dict | None:
         allowed_keys = ('name', 'kind', 'provider', 'health_url', 'monitoring_enabled',
                         'check_interval_seconds', 'timeout_seconds', 'expected_status',
-                        'failure_threshold', 'recovery_threshold', 'environment_id', 'external_ref')
+                        'failure_threshold', 'recovery_threshold', 'environment_id', 'external_ref', 'connector_id')
         allowed = {k: v for k, v in fields.items() if k in allowed_keys}
         if 'external_ref' in allowed:
             allowed['external_ref'] = Jsonb(allowed['external_ref'] or {})
@@ -423,7 +428,7 @@ class Store:
 
     def apply_observation(self, service: dict, observation: dict) -> dict:
         """Move a service's state only when the configured thresholds are met."""
-        current_status = service['current_status']
+        current_status = service.get('last_known_status', service['current_status'])
         if observation['status'] == 'unknown':
             # Monitoring produced no evidence about the application: never call that an outage.
             row = self.db.one(
@@ -438,7 +443,7 @@ class Store:
         healthy = observation['status'] == 'healthy'
         failures = 0 if healthy else service['consecutive_failures'] + 1
         successes = service['consecutive_successes'] + 1 if healthy else 0
-        current = service['current_status']
+        current = service.get('last_known_status', service['current_status'])
         target = current
         if healthy and successes >= service['recovery_threshold']:
             target = 'healthy'
@@ -463,9 +468,9 @@ class Store:
     # -- deployments -------------------------------------------------------
     def list_deployments(self, *, project_id: str | None = None, limit: int = 50) -> list[dict]:
         params: list = []
-        where = ''
+        where = " WHERE d.evidence_kind = 'deployment'"
         if project_id:
-            where = ' WHERE d.project_id = %s'
+            where += ' AND d.project_id = %s'
             params.append(uuid.UUID(project_id))
         rows = self.db.query(
             'SELECT d.*, p.name AS project_name, e.name AS environment_name, s.name AS service_name'
@@ -481,15 +486,18 @@ class Store:
     def create_deployment(self, payload: dict) -> dict:
         row = self.db.one(
             'INSERT INTO deployments (id, project_id, environment_id, service_id, provider,'
-            ' external_id, version, commit_sha, status, url, detail, deployed_at)'
-            ' VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'
-            ' ON CONFLICT (provider, external_id) WHERE external_id IS NOT NULL DO NOTHING RETURNING *',
+            ' external_id, version, commit_sha, status, url, detail, deployed_at, evidence_kind)'
+            ' VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'
+            ' ON CONFLICT (provider, external_id) WHERE external_id IS NOT NULL DO UPDATE SET'
+            ' status = EXCLUDED.status, detail = EXCLUDED.detail, url = EXCLUDED.url, deployed_at = EXCLUDED.deployed_at'
+            " WHERE deployments.evidence_kind = 'ci' AND EXCLUDED.evidence_kind = 'ci'"
+            ' AND deployments.project_id = EXCLUDED.project_id RETURNING *',
             (new_id(), payload['project_id'],
              payload.get('environment_id'), payload.get('service_id'),
              payload.get('provider', 'manual'), payload.get('external_id'),
              payload.get('version'), payload.get('commit_sha', ''), payload.get('status', 'unknown'),
              payload.get('url'), Jsonb(payload.get('detail') or {}),
-             payload.get('deployed_at') or datetime.now(timezone.utc)),
+             payload.get('deployed_at') or datetime.now(timezone.utc), payload.get('evidence_kind', 'deployment')),
         )
         if row:
             self.audit('owner', 'deployment.create', 'deployment', row['id'],
@@ -671,34 +679,34 @@ class Store:
             'SELECT'
             ' (SELECT count(*) FROM projects) AS projects,'
             ' (SELECT count(*) FROM services) AS services,'
-            ' (SELECT count(*) FROM services WHERE current_status = \'healthy\') AS healthy,'
-            ' (SELECT count(*) FROM services WHERE current_status = \'degraded\') AS degraded,'
-            ' (SELECT count(*) FROM services WHERE current_status = \'down\') AS down,'
-            ' (SELECT count(*) FROM services WHERE current_status = \'unknown\') AS unknown,'
-            ' (SELECT count(*) FROM services WHERE current_status = \'disabled\') AS disabled,'
+            ' (SELECT count(*) FROM service_evidence WHERE effective_status = \'healthy\') AS healthy,'
+            ' (SELECT count(*) FROM service_evidence WHERE effective_status = \'degraded\') AS degraded,'
+            ' (SELECT count(*) FROM service_evidence WHERE effective_status = \'down\') AS down,'
+            ' (SELECT count(*) FROM service_evidence WHERE effective_status = \'unknown\') AS unknown,'
+            ' (SELECT count(*) FROM service_evidence WHERE effective_status = \'disabled\') AS disabled,'
             ' (SELECT count(*) FROM incidents WHERE resolved_at IS NULL) AS active_incidents,'
             ' (SELECT count(*) FROM connectors WHERE status = \'connected\') AS connectors,'
-            ' (SELECT count(*) FROM services WHERE monitoring_enabled AND'
+            ' (SELECT count(*) FROM service_evidence WHERE monitoring_enabled AND'
             '   (last_checked_at IS NULL OR last_checked_at < now() - make_interval(secs => check_interval_seconds * 3))) AS stale'
         )
         clusters = self.db.query(
             'SELECT c.id, c.name, c.kind,'
             ' (SELECT count(*) FROM projects p WHERE p.cluster_id = c.id) AS projects,'
-            ' (SELECT count(*) FROM services s JOIN projects p ON p.id = s.project_id'
-            '   WHERE p.cluster_id = c.id AND s.current_status = \'down\') AS down'
+            ' (SELECT count(*) FROM service_evidence s JOIN projects p ON p.id = s.project_id'
+            '   WHERE p.cluster_id = c.id AND s.effective_status = \'down\') AS down'
             ' FROM clusters c ORDER BY c.name'
         )
         environments = self.db.query(
             'SELECT e.kind, count(*) AS services,'
-            ' count(*) FILTER (WHERE s.current_status = \'down\') AS down'
-            ' FROM environments e JOIN services s ON s.environment_id = e.id GROUP BY e.kind ORDER BY e.kind')
+            ' count(*) FILTER (WHERE s.effective_status = \'down\') AS down'
+            ' FROM environments e JOIN service_evidence s ON s.environment_id = e.id GROUP BY e.kind ORDER BY e.kind')
         attention = self.db.query(
-            'SELECT s.id, s.name, s.current_status, s.last_checked_at, s.last_error,'
+            'SELECT s.id, s.name, s.effective_status AS current_status, s.last_checked_at, s.last_error,'
             ' p.id AS project_id, p.name AS project_name, e.name AS environment_name'
-            ' FROM services s JOIN projects p ON p.id = s.project_id'
+            ' FROM service_evidence s JOIN projects p ON p.id = s.project_id'
             ' LEFT JOIN environments e ON e.id = s.environment_id'
-            " WHERE s.current_status IN ('down', 'degraded')"
-            ' ORDER BY CASE s.current_status WHEN \'down\' THEN 0 ELSE 1 END, s.status_changed_at DESC'
+            " WHERE s.effective_status IN ('down', 'degraded')"
+            ' ORDER BY CASE s.effective_status WHEN \'down\' THEN 0 ELSE 1 END, s.status_changed_at DESC'
             ' LIMIT 10')
         return {
             'totals': serialize(totals),
@@ -710,7 +718,7 @@ class Store:
             'projects': self.list_projects()[:20],
             'stale': [serialize(r) for r in self.db.query(
                 'SELECT s.id, s.name, s.last_checked_at, p.name AS project_name, s.check_interval_seconds'
-                ' FROM services s JOIN projects p ON p.id = s.project_id'
+                ' FROM service_evidence s JOIN projects p ON p.id = s.project_id'
                 ' WHERE s.monitoring_enabled AND (s.last_checked_at IS NULL OR'
                 ' s.last_checked_at < now() - make_interval(secs => s.check_interval_seconds * 3))'
                 ' ORDER BY s.last_checked_at NULLS FIRST LIMIT 10')],

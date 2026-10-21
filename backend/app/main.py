@@ -14,6 +14,7 @@ from .db import Database, iso
 from .definitions import TASK_DEFS, TASK_NAMES, WORKFLOWS, WORKFLOW_NAMES
 from .engine import Engine
 from .monitor import Collector
+from .lifecycle import build_lifecycle_router, lifecycle_definitions, publication_definitions
 from .security import SecretBox
 from .settings import Settings
 from .store import Store
@@ -43,8 +44,10 @@ async def lifespan(app):
     while True:
         try:
             # Metadata registration is idempotent; tolerate cloud dependency startup order.
-            await engine.request('POST', 'metadata/taskdefs', json=TASK_DEFS)
-            await engine.request('PUT', 'metadata/workflow', json=WORKFLOWS)
+            project_task, project_flow = lifecycle_definitions()
+            publish_task, publish_flow = publication_definitions()
+            await engine.request('POST', 'metadata/taskdefs', json=TASK_DEFS + [project_task,publish_task])
+            await engine.request('PUT', 'metadata/workflow', json=WORKFLOWS + [project_flow,publish_flow])
             break
         except HTTPException as exc:
             if exc.status_code not in (502, 503) or time.monotonic() >= deadline:
@@ -63,6 +66,7 @@ async def lifespan(app):
 
 app = FastAPI(title='Orchestra AI', version='2.0.0', lifespan=lifespan)
 app.include_router(build_router(settings, store, auth, engine))
+app.include_router(build_lifecycle_router(store, auth, engine))
 owner = Depends(auth.require)
 
 
@@ -129,6 +133,7 @@ async def workflows():
 async def workflow_catalog():
     """Every definition the engine knows about, with version and task shape."""
     definitions = await engine.request('GET', 'metadata/workflow')
+    permitted = {(r['name'],r['version']) for r in db.query('SELECT name,version FROM registered_definitions')}
     catalog = []
     for definition in definitions or []:
         tasks = definition.get('tasks') or []
@@ -140,6 +145,8 @@ async def workflow_catalog():
             'owner_email': definition.get('ownerEmail'),
             'timeout_seconds': definition.get('timeoutSeconds'),
             'managed': definition.get('name') in WORKFLOW_NAMES,
+            'runnable': (definition.get('name'),definition.get('version')) in permitted,
+            'dedicated_project_flow': definition.get('name') in {'project_change','project_publication'},
             'task_count': len(tasks),
             'task_types': sorted({t.get('type', 'SIMPLE') for t in tasks}),
             'tasks': tasks,
@@ -164,6 +171,7 @@ class StartRequest(BaseModel):
     logs: str = Field(min_length=10, max_length=20000)
     failure_mode: Literal['none', 'once', 'always'] = 'none'
     delay_seconds: int = Field(default=0, ge=0, le=30)
+    record_kind: Literal['project','verification'] = 'project'
 
 
 @app.post('/api/executions', status_code=201, dependencies=[owner])
@@ -173,29 +181,54 @@ async def start(body: StartRequest):
             raise HTTPException(409, 'Gemini is disabled or its API key is missing. Configure .env and restart API/workers.')
         if body.failure_mode != 'none' or body.delay_seconds:
             raise HTTPException(422, 'Failure injection is only available for diagnostics')
-    start_body = {'name': body.name, 'version': 1, 'input': body.model_dump(exclude={'name'})}
+    start_body = {'name': body.name, 'version': 1, 'input': body.model_dump(exclude={'name','record_kind'})}
     if settings.task_domain:
         # Documented fallback: use the domain when a worker is polling it, otherwise NO_DOMAIN.
         start_body['taskToDomain'] = {'*': f'{settings.task_domain}, NO_DOMAIN'}
     wid = await engine.request('POST', 'workflow', json=start_body)
-    store.audit('owner', 'workflow.start', 'workflow', wid, {'name': body.name})
+    kind = 'verification' if body.failure_mode != 'none' or body.delay_seconds else body.record_kind
+    db.execute("INSERT INTO execution_links(workflow_id,project_name,purpose,record_kind) VALUES (%s,%s,'diagnostics',%s) ON CONFLICT DO NOTHING",(wid,body.service,kind))
+    store.audit('owner', 'workflow.start', 'workflow', wid, {'name': body.name,'record_kind':kind})
     return {'workflowId': wid}
 
 
 @app.get('/api/executions', dependencies=[owner])
 async def executions(start: int = Query(0, ge=0), size: int = Query(20, ge=1, le=100),
+                     search: str = Query('', max_length=200),
                      status: Literal['ALL', 'RUNNING', 'COMPLETED', 'FAILED', 'TIMED_OUT', 'TERMINATED', 'PAUSED'] = 'ALL'):
-    query = 'workflowType IN (incident_analysis,diagnostic_pipeline)'
+    names = set(WORKFLOW_NAMES) | {'project_change','project_publication'} | {r['name'] for r in db.query('SELECT name FROM registered_definitions')}
+    query = 'workflowType IN (' + ','.join(sorted(names)) + ')'
     if status != 'ALL':
         query += ' AND status=' + status
-    return await engine.request('GET', 'workflow/search', params={
-        'start': start, 'size': size, 'sort': 'startTime:DESC', 'freeText': '*', 'query': query})
+    # Apply the same ownership predicate before totals and pagination. Legacy unowned
+    # coding runs remain in Conductor but are never advertised as accessible here.
+    links = {r['workflow_id']:r for r in db.query('SELECT * FROM execution_links')}
+    visible, offset = [], 0
+    while True:
+        page = await engine.request('GET', 'workflow/search', params={
+            'start': offset, 'size': 1000, 'sort': 'startTime:DESC', 'freeText': '*', 'query': query})
+        rows = page.get('results') or []
+        visible.extend(r for r in rows if r.get('workflowType', r.get('workflowName')) in WORKFLOW_NAMES
+                       or r.get('workflowId') in links)
+        for r in visible:
+            link = links.get(r.get('workflowId'))
+            if link:
+                r['association'] = {k: str(link[k]) if link[k] is not None else None for k in ['project_id','project_name','work_id','purpose','record_kind']}
+        offset += len(rows)
+        if not rows or offset >= page.get('totalHits', offset):
+            break
+    if search:
+        visible = [r for r in visible if search.lower() in (str(r.get('workflowId', '')) + ' ' + str(r.get('workflowType', '')) + ' ' + str((r.get('association') or {}).get('project_name',''))).lower()]
+    return {'results': visible[start:start + size], 'totalHits': len(visible)}
 
 
 async def owned_execution(wid: UUID):
     data = await engine.request('GET', f'workflow/{wid}', params={'includeTasks': 'true'})
-    if data.get('workflowName', data.get('workflowType')) not in WORKFLOW_NAMES:
+    if data.get('workflowName', data.get('workflowType')) not in WORKFLOW_NAMES and not db.one('SELECT workflow_id FROM execution_links WHERE workflow_id=%s',(str(wid),)):
         raise HTTPException(404, 'Execution not found')
+    link = db.one('SELECT * FROM execution_links WHERE workflow_id=%s',(str(wid),))
+    if link:
+        data['association'] = {k: str(link[k]) if link[k] is not None else None for k in ['project_id','project_name','purpose','record_kind']}
     return data
 
 
@@ -204,9 +237,27 @@ async def execution(wid: UUID):
     return await owned_execution(wid)
 
 
+class ExecutionLabel(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    record_kind: Literal['project','verification']
+
+
+@app.patch('/api/executions/{wid}/record-kind', dependencies=[owner])
+async def label_execution(wid: UUID, body: ExecutionLabel):
+    data=await owned_execution(wid)
+    name=str((data.get('input') or {}).get('service') or data.get('workflowName') or 'Run')[:120]
+    db.execute("INSERT INTO execution_links(workflow_id,project_name,purpose,record_kind) VALUES (%s,%s,'diagnostics',%s) ON CONFLICT(workflow_id) DO UPDATE SET record_kind=EXCLUDED.record_kind",(str(wid),name,body.record_kind))
+    store.audit('owner','execution.label','workflow',wid,{'record_kind':body.record_kind})
+    return {'record_kind':body.record_kind}
+
+
 @app.post('/api/executions/{wid}/retry', dependencies=[owner])
 async def retry(wid: UUID):
     data = await owned_execution(wid)
+    if data.get('workflowName', data.get('workflowType')) in {'project_change','project_publication'}:
+        raise HTTPException(409, 'Project work cannot be retried automatically; reconcile the local session')
+    if any(t.get('taskDefName')=='cp_analyze_incident' for t in data.get('tasks',[])):
+        raise HTTPException(409, 'Paid analysis cannot be retried automatically')
     if data['status'] not in ('FAILED', 'TIMED_OUT'):
         raise HTTPException(409, 'Only failed or timed-out executions can be retried')
     await engine.request('POST', f'workflow/{wid}/retry')

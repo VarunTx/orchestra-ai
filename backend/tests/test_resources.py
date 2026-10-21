@@ -300,7 +300,7 @@ def test_connector_credentials_never_returned():
     listed = client.get('/api/connectors', headers=HEADERS)
     assert 'ghp_example_token_value' not in listed.text
     assert 'credentials' not in listed.text
-    assert listed.json()[0]['status'] == 'connected'
+    assert listed.json()[0]['status'] == 'unconfigured'
 
     # Replacing the token rotates the sealed value without exposing either one.
     rotated = client.patch(f"/api/connectors/{created.json()['id']}", headers=HEADERS,
@@ -438,7 +438,7 @@ def _definition(**overrides):
         'version': 1,
         'schemaVersion': 2,
         'description': 'Re-run deterministic diagnostics and publish a report',
-        'inputParameters': ['service', 'logs'],
+        'inputParameters': ['incident'],
         'tasks': [
             {'name': 'cp_diagnose_incident', 'taskReferenceName': 'diagnose', 'type': 'SIMPLE',
              'inputParameters': {'incident': '${workflow.input.incident}'}},

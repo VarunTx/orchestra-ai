@@ -25,7 +25,7 @@ Orkes Conductor is the commercial product around an open-source engine. This pro
 - **Real monitoring**: an in-process collector performs HTTP health checks on each service's own interval, records bounded observation history with source and timestamp, and applies failure/recovery thresholds. It keeps running with the dashboard closed.
 - **Incidents**: automatic open/deduplicate/auto-resolve, acknowledgment, notes, manual resolution and evidence snapshots from the triggering check.
 - **Alerts**: webhook delivery with severity filters, cooldowns and per-delivery records. Nothing is sent until you configure an explicit target.
-- **Integrations**: Railway (GraphQL inventory), GitHub (repository, commits, workflow runs → deployments) and an agent-ingest path for local Docker. Credentials are sealed with AES-GCM and never returned to the browser.
+- **Integrations**: Railway (GraphQL inventory), GitHub (repository, commits and CI workflow runs) and an agent-ingest path for local Docker. Credentials are sealed with AES-GCM and never returned to the browser.
 - **Conductor operations**: execution history and filtering, task timelines, failed-task inspection, worker polling, manual retry/termination, definition browser, engine-wide catalog, a read-only schedule view, and **controlled definition registration** restricted to worker-backed SIMPLE tasks.
 - **Deterministic diagnostics**: start the existing `diagnostic_pipeline` from any incident; its evidence summary is passed as untrusted input.
 - **Single-owner auth**: password or master API token exchanged for an opaque, HTTP-only, server-side session. Sessions are revocable; the master token never reaches the browser.
@@ -44,9 +44,15 @@ Open **http://localhost:3000** and sign in with `OWNER_PASSWORD` (or `CONTROL_PL
 
 Only the dashboard (`127.0.0.1:3000`) and the authenticated API (`127.0.0.1:8000`) are published. Conductor and PostgreSQL stay on the private Compose network; the application database is created automatically inside the same PostgreSQL instance but in its **own database**, separate from Conductor's schema.
 
+## Manage development through release
+
+Use **Projects → Add project** to register a GitHub repository, environments and running service URLs. Monitoring works without a coding agent. **Work, Changes, Releases and Health** separate draft requests, CI/PR evidence, deployed-commit verification and timestamped health observations. Sunflower Grove is an optional example. Pair the companion once, then start approved work, inspect diffs/checks and request an approved draft PR through the website.
+
+The local runner requires separate model-use opt-ins and exact-commit publishing approval. It makes no production deployment or database-migration calls. Setup, recovery behavior, the companion Sunflower patch and remaining live-verification steps are in [project management](docs/PROJECT_MANAGEMENT.md).
+
 ## Register your first project
 
-1. **Projects → Add project**: name, description, cluster, optional GitHub repository.
+1. **Projects → Add project**: repository → environments → services → optional connections → setup summary. Edit project details and project groups afterward.
 2. Choose environments (development / staging / production).
 3. Add a service with a health endpoint. The first check runs immediately; subsequent checks follow the interval.
 4. Open the project to inspect status, trigger a check, disable monitoring or move the project to another cluster.
@@ -95,7 +101,7 @@ Definitions are registered by the API at startup. Additional definitions can be 
 | Provider | What it does | Status |
 |---|---|---|
 | Railway | Reads project/service/environment inventory with a project or account token (`backboard.railway.app/graphql/v2`) | Implemented; the inventory query is unverified without a real token, and Railway exposes no per-service health through it |
-| GitHub | Repository metadata, recent commits and workflow runs become deployment events | Implemented with optional token (public repos work anonymously) |
+| GitHub | Project-scoped repository metadata, CI runs and recent PRs; deployments remain separate | Optional token for public reads; select project scope, then validate/sync |
 | Docker agent | `scripts/docker_agent.py` reads `docker ps` locally and pushes observations with a connector token | Implemented; the platform never reaches into your machine |
 | HTTP | Native HTTP checks for any service | Implemented |
 | Render / Vercel / Kubernetes | Adapter interface only | Not implemented — no pretend integrations |

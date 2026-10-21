@@ -1,0 +1,8 @@
+[
+  {"name":"Engine types and unit tests","directory":"engine","argv":["npm","run","check"]},
+  {"name":"Local D1 migrations and readiness","directory":"engine","argv":["npm","run","test:d1"]},
+  {"name":"Operator dashboard types","directory":"control-panel","argv":["npm","run","typecheck"]},
+  {"name":"Operator dashboard build","directory":"control-panel","argv":["npm","run","build"]},
+  {"name":"Parent portal types","directory":"parent-portal","argv":["npm","run","typecheck"]},
+  {"name":"Parent portal build","directory":"parent-portal","argv":["npm","run","build"]}
+]

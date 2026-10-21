@@ -11,6 +11,7 @@ export type Definition = {
   [key: string]: unknown;
 };
 export type Run = {
+  association?: {project_name:string;project_id:string|null;record_kind:string;purpose:string};
   workflowId: string;
   workflowType?: string;
   workflowName?: string;
@@ -143,6 +144,7 @@ export type Observation = {
 };
 
 export type Project = {
+  record_kind: "project" | "verification";
   id: string;
   name: string;
   slug: string;
@@ -226,6 +228,7 @@ export type Incident = {
 };
 
 export type Connector = {
+  project_ids: string[];
   id: string;
   provider: "railway" | "github" | "docker";
   name: string;
