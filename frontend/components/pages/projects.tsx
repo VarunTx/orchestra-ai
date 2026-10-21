@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useApi } from "@/lib/hooks";
 import { api } from "@/lib/api";
@@ -20,12 +20,10 @@ import { Button } from "@/components/ui/button";
 
 export default function ProjectsPage() {
   const params = useSearchParams();
-  const router = useRouter();
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
   const [cluster, setCluster] = useState(params.get("cluster") ?? "");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const filters = new URLSearchParams();
   if (cluster) filters.set("cluster_id", cluster);
   if (status) filters.set("status", status);
@@ -48,7 +46,7 @@ export default function ProjectsPage() {
       await api(`projects/${project.id}`, { method: "DELETE" });
       await reload();
     } catch (e) {
-      setImportError((e as Error).message);
+      setActionError((e as Error).message);
     }
   }
 
@@ -60,26 +58,6 @@ export default function ProjectsPage() {
         description="Projects group environments and services. Status comes from real checks, not estimates."
         actions={
           <>
-            <Button
-              variant="outline"
-              disabled={importing}
-              onClick={async () => {
-                setImporting(true);
-                try {
-                  const p = await api<{ id: string }>(
-                    "projects/import-sunflower",
-                    { method: "POST", body: "{}" },
-                  );
-                  router.push(`/projects/${p.id}`);
-                } catch (e) {
-                  setImportError((e as Error).message);
-                } finally {
-                  setImporting(false);
-                }
-              }}
-            >
-              Import Sunflower Grove
-            </Button>
             <Button variant="outline" onClick={() => void reload()}>
               Refresh
             </Button>
@@ -89,7 +67,7 @@ export default function ProjectsPage() {
           </>
         }
       />
-      <ErrorBanner message={error ?? importError} />
+      <ErrorBanner message={error ?? actionError} />
       <div className="toolbar" style={{ marginBottom: 14 }}>
         <input
           placeholder="Search projects"
