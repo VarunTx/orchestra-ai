@@ -1724,3 +1724,65 @@ code, .mono-cell, .run-link, p { overflow-wrap: anywhere; }
 .modal { max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow: auto; }
 .success-banner { border: 1px solid #9bc8ab; background: #edf8f0; color: #235d36; padding: 14px 18px; display: flex; gap: 12px; margin-bottom: 16px; border-radius: 8px; }
 @media(max-width: 650px) { .toolbar { gap: 8px; } .kv { grid-template-columns: 1fr; } .page-heading > div, .panel-heading > * { max-width: 100%; } }
+
+/* ---- list rows (project groups, clusters) ---- */
+.list { display: flex; flex-direction: column; }
+.list-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-bottom: 1px dashed var(--line);
+}
+.list-row:last-child { border-bottom: 0; }
+.list-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.list-main strong { font-size: 13px; }
+.list-row .tag { flex: 0 0 auto; }
+
+/* ---- keep grid rows aligned; never stretch pills into blobs ---- */
+.timeline-event { align-items: center; }
+.timeline-event > .tag,
+.timeline-event > .status { align-self: center; justify-self: start; }
+.mono-cell { overflow-wrap: anywhere; }
+
+/* ---- add-project environment choices ---- */
+fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+fieldset > legend { font-size: 12px; color: var(--muted); padding: 0; margin-bottom: 2px; }
+.choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.checkbox-row {
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px;
+  background: #fff; text-transform: capitalize; font-size: 13px;
+}
+.checkbox-row:hover { border-color: #c9d4cc; }
+.checkbox-row.checked { border-color: var(--green); background: #f3f8f4; }
+.checkbox-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--green); }
+
+/* ---- project readiness cards ---- */
+.readiness-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.readiness-card {
+  display: flex; flex-direction: column; gap: 7px; padding: 12px 13px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fff;
+}
+.readiness-card.needs-setup { border-left: 3px solid #d9b26a; }
+.readiness-card.ready { border-left: 3px solid var(--green); }
+.readiness-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.readiness-head strong { text-transform: capitalize; font-size: 12px; letter-spacing: .01em; }
+.readiness-card p { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.readiness-card .text-button { align-self: flex-start; font-size: 12px; }
+.tag-ready { background: #e7f5ec; color: #1f6b45; border-color: #cfe7d8; }
+.tag-setup { background: #fdf3dd; color: #8a5a00; border-color: #f0dfb4; }
+@media (max-width: 760px) { .choice-grid { grid-template-columns: 1fr; } }
+
+/* Audit detail: keep the table readable instead of a clipped ribbon. */
+.audit-detail { max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 900px) { .audit-detail { max-width: 160px; } }
+
+/* The project form styles labels as columns; environment choices must stay inline. */
+.form-card .checkbox-row {
+  flex-direction: row; align-items: center; gap: 9px;
+  padding: 10px 12px; border-radius: 9px;
+}
+.form-card .checkbox-row input[type="checkbox"] {
+  width: 16px; height: 16px; padding: 0; margin: 0; flex: 0 0 auto;
+  border: 0; background: none; box-shadow: none; accent-color: var(--green);
+}
+.form-card .checkbox-row span { font-size: 13px; }
+.kpi strong { font-variant-numeric: tabular-nums; }

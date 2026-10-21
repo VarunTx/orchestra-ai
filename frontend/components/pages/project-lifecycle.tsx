@@ -187,16 +187,24 @@ export default function ProjectLifecycle({ projectId }: { projectId: string }) {
         <span className="subtle">Development → review → release → health</span>
       </div>
       <ErrorBanner message={message ?? state.error} />
-      <div className="setup-grid" aria-label="Project readiness">
+      <div className="readiness-grid" aria-label="Project readiness">
         {data &&
           Object.entries(data.capabilities).map(([name, c]) => (
-            <p key={name}>
-              <strong>
-                {name}: {c.ready ? "Configured" : "Setup needed"}
-              </strong>
-              <br />
-              {c.detail} · <a href={c.setup_url}>Open setup</a>
-            </p>
+            <div
+              key={name}
+              className={`readiness-card ${c.ready ? "ready" : "needs-setup"}`}
+            >
+              <div className="readiness-head">
+                <strong>{name}</strong>
+                <span className={`tag ${c.ready ? "tag-ready" : "tag-setup"}`}>
+                  {c.ready ? "configured" : "setup needed"}
+                </span>
+              </div>
+              <p>{c.detail}</p>
+              <a className="text-button" href={c.setup_url}>
+                Open setup
+              </a>
+            </div>
           ))}
       </div>
       {data?.management.managed_repo && (

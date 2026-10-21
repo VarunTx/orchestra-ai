@@ -517,3 +517,16 @@ def test_register_definition_rejects_duplicate_version(monkeypatch):
     response = client.post('/api/workflows/definitions', headers=HEADERS,
                            json={'definition': _definition()})
     assert response.status_code == 409
+
+
+def test_migration_discovery_ignores_conflict_copies():
+    from app.db import is_migration_file, migration_files
+
+    assert is_migration_file('0001_init.sql')
+    assert is_migration_file('0010_publication_associations.sql')
+    assert not is_migration_file('0010_publication_associations 2.sql')
+    assert not is_migration_file('notes.sql')
+    names = [path.name for path in migration_files()]
+    assert names == sorted(names)
+    assert len(names) == len(set(names))
+    assert all(' 2' not in name for name in names)

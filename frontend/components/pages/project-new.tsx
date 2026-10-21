@@ -120,23 +120,31 @@ export default function NewProjectPage() {
         {step === 1 && (
           <fieldset>
             <legend>Where does it run?</legend>
-            {["development", "staging", "production"].map((n) => (
-              <label className="checkbox-row" key={n}>
-                <input
-                  type="checkbox"
-                  checked={environments.includes(n)}
-                  onChange={(e) =>
-                    setEnvironments(
-                      e.target.checked
-                        ? [...environments, n]
-                        : environments.filter((x) => x !== n),
-                    )
-                  }
-                />
-                {n}
-              </label>
-            ))}
-            <p>
+            <div className="choice-grid">
+              {["development", "staging", "production"].map((n) => {
+                const checked = environments.includes(n);
+                return (
+                  <label
+                    className={`checkbox-row ${checked ? "checked" : ""}`}
+                    key={n}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) =>
+                        setEnvironments(
+                          e.target.checked
+                            ? [...environments, n]
+                            : environments.filter((x) => x !== n),
+                        )
+                      }
+                    />
+                    <span>{n}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="form-help">
               Select at least one environment. These are labels; Orchestra does
               not create hosting resources.
             </p>

@@ -156,17 +156,18 @@ export default function Overview() {
                   Manage
                 </Link>
               </div>
-              <div className="timeline">
+              <div className="list">
                 {data.clusters.map((cluster) => (
-                  <div className="timeline-event" key={cluster.id}>
-                    <time>{cluster.kind}</time>
-                    <span className="tag">{cluster.projects} projects</span>
-                    <div>
+                  <div className="list-row" key={cluster.id}>
+                    <div className="list-main">
                       <strong>{cluster.name}</strong>
                       <div className="subtle">
-                        {cluster.down > 0 ? `${cluster.down} services down` : "no down services"}
+                        {cluster.projects} {cluster.projects === 1 ? "project" : "projects"}
+                        {" · "}
+                        {cluster.down > 0 ? `${cluster.down} down` : "no down services"}
                       </div>
                     </div>
+                    <span className="tag">{cluster.kind}</span>
                   </div>
                 ))}
               </div>

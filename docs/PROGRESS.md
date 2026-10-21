@@ -210,3 +210,12 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - The maintainer reviewed and re-ran this work before publication: a duplicate migration file (`0010_publication_associations 2.sql`) made fresh environments retry an applied migration, and two tests still assumed the removed companion importer. Both are fixed; the suite above is the post-fix result.
 - Maintainer-specific companion work was removed from the public repository for this release: the importer route, its UI action, the companion patch, screenshots and project references now live outside the tracked tree. The generic lifecycle feature and its tests remain.
 - Not verified by the maintainer: a live model session, GitHub publication, or any hosted deployment. The runner suite uses deterministic fixtures and makes no provider calls.
+
+## Console readability fixes and migration guard — October 21, 2026
+
+- Reworked the Overview "Project groups" and Settings "Clusters" rows into name-plus-detail rows with a kind tag on the right; the previous timestamp grid stretched pills into tall ovals and pushed labels to the panel edge.
+- Replaced the plain-text project readiness list with status cards (green "configured" / amber "setup needed", explanation and a setup link) and kept the Work/Changes/Releases/Health tabs as a proper tab row.
+- Fixed the add-project environment step: the three checkboxes were inheriting the column-oriented form-label styles (checkbox above the text) and now render as aligned inline choices.
+- Stopped timeline status pills from stretching, made long audit details truncate instead of clipping the table, and removed the cramped KPI numeral spacing.
+- Added a migration-name guard (`^\d{4}_[a-z0-9_]+\.sql$`) plus ignore rules for cloud-sync conflict copies. A `0002_… 2.sql` duplicate had made the API restart-loop on `PermissionError`; the loader now refuses such files and a unit test covers it.
+- Verified after the changes: **61 backend tests passed, 1 skipped**; typecheck clean; production build compiled; **12 Playwright tests passed**; deterministic engine smoke passed.

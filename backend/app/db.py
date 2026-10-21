@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -14,6 +15,16 @@ log = logging.getLogger('orchestra.db')
 
 MIGRATIONS_DIR = Path(__file__).with_name('migrations')
 MIGRATION_LOCK = 0x0C0D_57A  # single migrator across replicas
+# Only real migrations. Cloud-sync conflict copies ("0002_x 2.sql") must never run.
+MIGRATION_NAME = re.compile(r'^\d{4}_[a-z0-9_]+\.sql$')
+
+
+def is_migration_file(name: str) -> bool:
+    return bool(MIGRATION_NAME.match(name))
+
+
+def migration_files() -> list[Path]:
+    return sorted(path for path in MIGRATIONS_DIR.glob('*.sql') if is_migration_file(path.name))
 
 
 class Database:
@@ -103,7 +114,7 @@ class Database:
                 cur.execute('SELECT version FROM schema_migrations')
                 applied = {row['version'] for row in cur.fetchall()}
                 newly: list[str] = []
-                for path in sorted(MIGRATIONS_DIR.glob('*.sql')):
+                for path in migration_files():
                     if path.name in applied:
                         continue
                     log.info('applying migration %s', path.name)

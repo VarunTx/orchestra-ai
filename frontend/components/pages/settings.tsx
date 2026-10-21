@@ -78,16 +78,19 @@ export default function SettingsPage() {
               <h2>Clusters</h2>
               <span className="subtle">{clusters.data?.length ?? 0} groups</span>
             </div>
-            {(clusters.data ?? []).map((cluster) => (
-              <div className="timeline-event" key={cluster.id}>
-                <time>{cluster.kind}</time>
-                <span className="tag">{cluster.service_count} services</span>
-                <div>
-                  <strong>{cluster.name}</strong>
-                  <div className="subtle">{cluster.project_count} projects</div>
+            <div className="list">
+              {(clusters.data ?? []).map((cluster) => (
+                <div className="list-row" key={cluster.id}>
+                  <div className="list-main">
+                    <strong>{cluster.name}</strong>
+                    <div className="subtle">
+                      {cluster.project_count} projects · {cluster.service_count} services
+                    </div>
+                  </div>
+                  <span className="tag">{cluster.kind}</span>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </section>
 
@@ -124,7 +127,7 @@ export default function SettingsPage() {
                       <td className="mono-cell">
                         {entry.resource_type} {entry.resource_id.slice(0, 8)}
                       </td>
-                      <td className="mono-cell">{JSON.stringify(entry.detail).slice(0, 120)}</td>
+                      <td className="mono-cell audit-detail" title={JSON.stringify(entry.detail)}>{JSON.stringify(entry.detail).slice(0, 160)}</td>
                     </tr>
                   ))}
                 </tbody>

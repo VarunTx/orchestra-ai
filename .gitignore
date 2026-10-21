@@ -23,3 +23,5 @@ runner-state/
 *.sqlite
 *.sqlite3
 *.db
+# Cloud-sync conflict copies (e.g. "0002_x 2.sql")
+* 2.*
