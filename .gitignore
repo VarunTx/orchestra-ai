@@ -16,3 +16,10 @@ playwright-report/
 next-env.d.ts
 backups/
 .env.deploy
+
+# Local runner state, journals and transcripts (never commit)
+.orchestra/
+runner-state/
+*.sqlite
+*.sqlite3
+*.db

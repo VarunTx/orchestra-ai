@@ -46,9 +46,9 @@ Only the dashboard (`127.0.0.1:3000`) and the authenticated API (`127.0.0.1:8000
 
 ## Manage development through release
 
-Use **Projects → Add project** to register a GitHub repository, environments and running service URLs. Monitoring works without a coding agent. **Work, Changes, Releases and Health** separate draft requests, CI/PR evidence, deployed-commit verification and timestamped health observations. Sunflower Grove is an optional example. Pair the companion once, then start approved work, inspect diffs/checks and request an approved draft PR through the website.
+Use **Projects → Add project** to register a GitHub repository, environments and running service URLs. Monitoring works without a coding agent. **Work, Changes, Releases and Health** separate draft requests, CI/PR evidence, deployed-commit verification and timestamped health observations.
 
-The local runner requires separate model-use opt-ins and exact-commit publishing approval. It makes no production deployment or database-migration calls. Setup, recovery behavior, the companion Sunflower patch and remaining live-verification steps are in [project management](docs/PROJECT_MANAGEMENT.md).
+The optional local runner requires separate model-use opt-ins and exact-commit publishing approval. It makes no production deployment or database-migration calls. Setup, approval flow and recovery behavior: [project lifecycle](docs/PROJECT_LIFECYCLE.md).
 
 ## Register your first project
 

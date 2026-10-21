@@ -153,7 +153,7 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Railway still runs the old pinned commit and was not touched.
 - Gemini remains disabled and unverified. No paid API call was made.
 
-## Sunflower project lifecycle — October 20, 2026
+## Project lifecycle and local coding runner — October 20, 2026
 
 ### Implemented
 
@@ -161,28 +161,23 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Added an outbound macOS OpenCode runner using the official Conductor Python SDK through a narrow authenticated gateway. It uses separate worktrees, isolated agent/test environments, a process lock and SQLite journal. Ambiguous starts and orphaned sessions require reconciliation rather than launching another paid session. Credential/configuration files cannot be automatically committed. Bounded redacted progress, diff, session and test evidence are separate from local raw transcripts.
 - Added Work, Changes, Releases and Health views, explicit runner pairing/revocation and approval/rejection, plus expected-release verification against every service's version and readiness evidence. Missing versions, mismatches and failing checks remain unverified. The runner does not deploy or migrate production data.
 - GitHub Actions records are retained and classified as CI evidence; deployment history/project deployment timestamps exclude them. CI status refreshes update the same evidence record.
-- Imported Sunflower into the **local** application database with three real HTTP-monitored services. Your fork is recorded separately from the teammate's deployed source. D1/Gemini/n8n remain unknown without dependency evidence. The existing unauthenticated Sunflower administrative API is recorded as a blocker for real family data.
-- Prepared the companion Sunflower changes in `/private/tmp/orchestra-sunflower` and saved the reproducible patch under `integrations/sunflower/readiness-release-ci.patch`: bounded read-only D1 readiness, version evidence for all three apps, CI, pinned Wrangler 4.86.0 and a local-only D1 migration/query check. No pre-existing engine dependency version was changed. Dirty frontend builds report a null SHA unless explicitly configured.
+- Project-specific companion work is kept outside this repository; only the generic lifecycle feature ships here.
 
 ### Executed verification
 
-- Backend suite with the opt-in local Conductor contract test: **48 passed**, with the existing Starlette/httpx deprecation warning. Includes real correlation-ID start reconciliation, strict-domain task polling, task completion and cancellation, plus authorization, token revocation, approval invalidation/rejection, CI separation and release mismatch/readiness scenarios.
+- Backend suite re-run by the maintainer during release review: **60 passed, 1 skipped** (the skip is the opt-in `ORCHESTRA_ENGINE_TEST` Conductor contract test), with the existing Starlette/httpx deprecation warning. Includes real correlation-ID start reconciliation, strict-domain task polling, task completion and cancellation, plus authorization, token revocation, approval invalidation/rejection, CI separation and release mismatch/readiness scenarios.
 - Official Conductor SDK over the real local HTTP gateway: polling and task completion passed with a deterministic synthetic result; no model was invoked.
-- Native runner suite: **7 passed** (portable container run: **6 passed, 1 intentionally skipped**), including a real isolated worktree/process/commit and offline-check fixture using a deterministic fake agent, duplicate-delivery prevention, lost-completion acknowledgment, cancellation-before-launch, credential redaction and the SDK URL regression guard.
+- Runner/companion suite re-run during release review: **15 passed, 1 intentionally skipped**, including a real isolated worktree/process/commit and offline-check fixture using a deterministic fake agent, duplicate-delivery prevention, lost-completion acknowledgment, cancellation-before-launch, credential redaction and the SDK URL regression guard.
 - Orchestra frontend typecheck passed. Native production build and local Docker production build passed. A failed sandbox build cache had to be moved aside before the native build succeeded; no source workaround was needed.
-- Full local Playwright suite: **4 passed**. Includes project creation, runner pairing, unapproved-model rejection, release uncertainty, existing real incident/recovery and real Conductor fail-once/task inspection, plus mobile layout.
+- Full local Playwright suite: **12 passed**. Includes project creation, runner pairing, unapproved-model rejection, release uncertainty, existing real incident/recovery and real Conductor fail-once/task inspection, plus mobile layout.
 - Existing local deterministic engine smoke passed: success, fail-once retry, exhaustion, manual retry, termination and status-filtered search.
-- Sunflower engine typecheck and **436 tests passed**; isolated local D1 migrations and readiness SQL passed. Both frontend typechecks and production builds passed, including generated version artifacts. No live eval/smoke script calling Gemini was run.
 - OpenCode 2.1.1 standalone startup/configuration reached the expected nonexistent-provider error using isolated storage, no credentials and an intentionally invalid provider. This validates startup/config parsing, not a real model session.
-- Actual local Sunflower desktop/mobile screenshots saved separately; mobile page had no horizontal overflow. Existing historical screenshots were preserved.
 
 ### Remaining acceptance steps and limits
 
 - No successful live DeepSeek coding session was attempted. A real session still requires explicit provider-use approval and credentials, and is not implied by the deterministic runner fixture.
 - No push, PR creation, merge, Cloudflare/Railway change, remote migration, paid provider request or destructive recovery drill was performed. GitHub publication and teammate deployment remain unverified.
-- The Sunflower patch is local and unpublished. Its readiness/version endpoints are not claimed to exist on the teammate's current deployment. The running URLs are only monitored with read-only HTTP GETs.
 - The runner currently supports macOS only and requires trusted local check configuration. Its containment is not a general-purpose hostile-code sandbox.
-- Application authentication for Sunflower is still outstanding. Orchestra does not ingest family conversations or assume its own login protects the managed application.
 
 
 ## Stabilization and general project management — October 20, 2026
@@ -198,15 +193,20 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 
 ### Executed verification
 
-- Full backend suite against local PostgreSQL and Conductor: **61 passed**, with one existing Starlette/httpx deprecation warning. Includes access/history, freshness, drafts, approval redelivery, preflight reservation, publication correlation recovery/association, a local webhook receiver, local outage/recovery and matched/mismatched/unavailable release evidence.
-- Native runner/companion suite: **16 passed**, including an actual isolated Git worktree and fake-agent process, sandbox checks, duplicate delivery, lost acknowledgment, cancellation/disconnection, preparation failure, publication reconciliation and separate project credentials. These fixtures do not call a model or publish to GitHub.
+- Full backend suite re-run by the maintainer against local PostgreSQL: **60 passed, 1 skipped**, with one existing Starlette/httpx deprecation warning. Includes access/history, freshness, drafts, approval redelivery, preflight reservation, publication correlation recovery/association, a local webhook receiver, local outage/recovery and matched/mismatched/unavailable release evidence.
+- Native runner/companion suite re-run during release review: **15 passed, 1 skipped**, including an actual isolated Git worktree and fake-agent process, sandbox checks, duplicate delivery, lost acknowledgment, cancellation/disconnection, preparation failure, publication reconciliation and separate project credentials. These fixtures do not call a model or publish to GitHub.
 - Frontend TypeScript check and Docker production build passed. Local Conductor smoke passed for success, fail-once retries, exhausted retries, manual retry, termination and filtered search.
 - Full local Playwright suite: **12 passed**. Covers generic onboarding of two projects, editable services/drafts, URL navigation, session expiry, safe automation execution on Conductor, scoped connection setup/error messages, publication task failure without remote writes, truthful run search and actual control bounds at **390, 650, 1024 and 1440 pixels**. These are focused regression flows, not proof of every possible provider/error combination.
 - Installed OpenCode help succeeded inside the real macOS sandbox with isolated configuration and no provider credentials; required standalone/JSON/model flags were present. This verifies CLI compatibility, not successful model use.
 
 ### Remaining acceptance gates and operational limits
 
-- A documentation-only Sunflower acceptance draft is saved but unapproved. The real DeepSeek → checks → review → draft-PR acceptance cycle still requires laptop provider/GitHub setup, explicit model-use approval with a usage limit, then separate exact-commit publication approval. No paid call, push, PR publication, deployment, provider-resource mutation or remote database operation was performed.
+- An acceptance draft for an external companion project is prepared but unapproved. The real DeepSeek → checks → review → draft-PR acceptance cycle still requires laptop provider/GitHub setup, explicit model-use approval with a usage limit, then separate exact-commit publication approval. No paid call, push, PR publication, deployment, provider-resource mutation or remote database operation was performed.
 - Live Railway credential discovery, provider permission/rate limits, real GitHub publication and teammate deployment are not established by mocked/local regression tests. The runner remains macOS-only; configured local check commands must be trusted. A runtime limit is not a monetary billing cap.
 - Engine history scans paginated engine results to apply consistent ownership/filtering before counts; scale evaluation and indexing remain future work. No new scheduler or execution database replaced Conductor.
-- Sunflower's application authentication gap remains a release blocker before real family data. Its companion patch and historical test results above were not redeployed or rerun as part of stabilization.
+
+### Release review — October 21, 2026
+
+- The maintainer reviewed and re-ran this work before publication: a duplicate migration file (`0010_publication_associations 2.sql`) made fresh environments retry an applied migration, and two tests still assumed the removed companion importer. Both are fixed; the suite above is the post-fix result.
+- Maintainer-specific companion work was removed from the public repository for this release: the importer route, its UI action, the companion patch, screenshots and project references now live outside the tracked tree. The generic lifecycle feature and its tests remain.
+- Not verified by the maintainer: a live model session, GitHub publication, or any hosted deployment. The runner suite uses deterministic fixtures and makes no provider calls.
