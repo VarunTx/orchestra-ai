@@ -8,6 +8,17 @@ It never talks to Conductor directly and never touches the database.
 ## Run it
 
 ```sh
+./scripts/run_mcp.sh          # loads .env, then starts the stdio server
+```
+
+`opencode.json` in this repository already registers it, so `opencode mcp list`
+shows `orchestra connected` and the tools are available as `orchestra_*`.
+The server needs a reachable control plane — `docker compose up -d postgres
+conductor api workers` for local work.
+
+Manual equivalent:
+
+```sh
 cd backend
 CONTROL_PLANE_URL=http://127.0.0.1:8000 \
 CONTROL_PLANE_TOKEN=<same value as the API> \
@@ -24,13 +35,15 @@ Client configuration (OpenCode `opencode.json`):
 
 ```json
 {
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "orchestra": {
-      "type": "local",
-      "command": ["python", "-m", "app.mcp_server"],
-      "cwd": "backend",
-      "environment": { "CONTROL_PLANE_TOKEN": "${CONTROL_PLANE_TOKEN}" },
-      "enabled": true
+    "servers": {
+      "orchestra": {
+        "type": "local",
+        "command": ["sh", "scripts/run_mcp.sh"],
+        "cwd": ".",
+        "environment": { "MCP_ENABLE_WRITES": "{env:MCP_ENABLE_WRITES}" }
+      }
     }
   }
 }
