@@ -1,0 +1,12 @@
+# MCP server only: exposes the control-plane tool surface over Streamable HTTP.
+# Used by the dedicated `mcp` service so the full API is never published.
+FROM python:3.11.11-slim
+WORKDIR /app
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/app ./app
+RUN useradd --uid 10001 --create-home app
+USER app
+ENV PORT=8080
+EXPOSE 8080
+CMD ["python", "-m", "app.mcp_server", "--http"]

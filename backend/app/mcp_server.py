@@ -370,8 +370,16 @@ def _constant_time_eq(left: str, right: str) -> bool:
     return hmac.compare_digest(left.encode('utf-8'), right.encode('utf-8'))
 
 
-def build_http_app(server: MCPServer, client_token: str):
-    app = server.streamable_http_app(streamable_http_path='/mcp')
+def build_http_app(server: MCPServer, client_token: str, allowed_hosts: list[str] | None = None):
+    # DNS-rebinding protection rejects unknown Host headers, so the public
+    # hostname must be declared. Defaults keep local development working.
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    hosts = allowed_hosts or ['127.0.0.1', 'localhost', '127.0.0.1:8765', 'localhost:8765']
+    app = server.streamable_http_app(
+        streamable_http_path='/mcp',
+        transport_security=TransportSecuritySettings(allowed_hosts=hosts),
+    )
     # Starlette expects a middleware factory taking the inner app.
     app.add_middleware(BearerMiddleware, expected=client_token)
     return app
@@ -391,7 +399,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         import uvicorn
 
-        uvicorn.run(build_http_app(server, client_token),
+        hosts = [h.strip() for h in os.getenv('MCP_ALLOWED_HOSTS', '').split(',') if h.strip()]
+        uvicorn.run(build_http_app(server, client_token, hosts or None),
                     host=os.getenv('HOST', '0.0.0.0'),
                     port=int(os.getenv('PORT', '8765')),
                     log_level=os.getenv('LOG_LEVEL', 'info'))

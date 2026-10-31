@@ -27,6 +27,9 @@ async function proxy(
     "settings",
     "work",
     "releases",
+    // Token minting is admin-only server-side: POST /api/tokens requires an
+    // owner session or the master token, so this stays behind the same gate.
+    "tokens",
   ]);
   if (!allowed.has(path[0]))
     return NextResponse.json({ detail: "Not found" }, { status: 404 });

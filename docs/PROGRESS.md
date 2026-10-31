@@ -252,3 +252,12 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Deliberately still absent: deletes as tools, workflow-definition registration, connector credentials, and anything that reaches `incident_analysis`. The paid model call is not reachable from MCP.
 - Verified: **118 backend tests passed, 1 skipped** (including 21 MCP and 16 scope tests). Live over HTTP MCP with an `operate` token: 19 tools listed, `create_cluster` created a real cluster, `list_clusters` read it back, and the audit trail recorded `token:claude-code cluster.create`. OpenCode reconnected on the new tool surface; Claude Code reports the endpoint connected.
 - Not verified: a model-driven Claude Code run (the CLI is installed but not logged in on this machine), Codex (not installed), and the hosted MCP endpoint (not deployed; the Railway API still has no public domain).
+
+### Hosted MCP endpoint — October 31, 2026
+
+- Added a sixth Railway service `mcp` (built from `Dockerfile.mcp`, root `/`) publishing only the MCP tool surface at `https://mcp-production-89f3.up.railway.app/mcp`. The API itself stays private: the service reaches it at `http://api.railway.internal:8000`.
+- It holds an `operate`-scoped token (label `mcp-hosted`), so deletes, publishing, credentials and token management are unreachable, and the API enforces that rather than the MCP layer. Clients authenticate with a separate `MCP_CLIENT_TOKEN`.
+- `POST /api/tokens` is now reachable through the dashboard proxy so a scoped token can be minted without shell access to the private network. It remains admin-only: an owner session or the master token is required, and the call is audited.
+- The SDK's DNS-rebinding protection rejected the Railway hostname with `421 Invalid Host header`; the server now takes `MCP_ALLOWED_HOSTS` and passes it to `TransportSecuritySettings`.
+- Verified against production over HTTPS: 19 tools listed, `infrastructure_health` returned storage/engine connected with four workers polling, `create_cluster` created a real cluster, `list_clusters` read it back, and the audit trail recorded `token:mcp-hosted cluster.create`.
+- Not verified: a model-driven Claude Code or Codex session against the hosted URL (Claude Code is installed but not logged in here; Codex is not installed).

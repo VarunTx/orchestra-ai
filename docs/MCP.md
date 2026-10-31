@@ -15,6 +15,10 @@ never touches the database.
 | stdio | `./scripts/run_mcp.sh` | one local operator, zero network exposure |
 | HTTP | `python -m app.mcp_server --http` | hosted, any MCP client on any machine |
 
+Hosted endpoint: **https://mcp-production-89f3.up.railway.app/mcp** (Railway
+service `mcp`, built from `Dockerfile.mcp`). It holds an `operate`-scoped token,
+so it cannot delete anything.
+
 ```sh
 # HTTP, locally
 cd backend
@@ -32,6 +36,7 @@ PORT=8765 python -m app.mcp_server --http
 | `CONTROL_PLANE_TOKEN` | required | Token the **server** uses to call the API. Its scope bounds everything an agent can do. |
 | `MCP_CLIENT_TOKEN` | required for `--http` | Bearer secret **clients** present to the MCP endpoint |
 | `PORT` / `HOST` | `8765` / `0.0.0.0` | HTTP listen address |
+| `MCP_ALLOWED_HOSTS` | localhost | Comma-separated `Host` values accepted by the SDK's DNS-rebinding protection. Must include the public hostname when hosted. |
 
 The two tokens are deliberately separate: `MCP_CLIENT_TOKEN` only proves the
 caller may talk to the MCP endpoint, while `CONTROL_PLANE_TOKEN` decides what
@@ -121,3 +126,29 @@ cd backend && ../.venv/bin/python -m pytest tests/test_mcp_server.py tests/test_
 Verified on 2026-10-31: 19 tools over HTTP MCP with an `operate` token created a
 real cluster and read it back, and the audit trail recorded
 `token:claude-code cluster.create`.
+
+## Hosted deployment
+
+| Piece | Value |
+| --- | --- |
+| Service | Railway `mcp`, root `/`, built from `Dockerfile.mcp` |
+| URL | `https://mcp-production-89f3.up.railway.app/mcp` |
+| Listen | `PORT=8080` |
+| API target | `CONTROL_PLANE_URL=http://api.railway.internal:8000` (private) |
+| Credential | `CONTROL_PLANE_TOKEN` = `operate`-scoped token, label `mcp-hosted` |
+| Client secret | `MCP_CLIENT_TOKEN`, stored in `.env.mcp-hosted` (gitignored) |
+| Allowed host | `MCP_ALLOWED_HOSTS=mcp-production-89f3.up.railway.app` |
+
+Only the tool surface is public: the API itself stays on the private network.
+The service cannot delete anything, because its token is `operate`-scoped and
+the API enforces that, not the MCP layer.
+
+To point a client at production instead of localhost:
+
+```sh
+export ORCHESTRA_MCP_URL=https://mcp-production-89f3.up.railway.app/mcp
+export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-hosted | cut -d= -f2-)
+```
+
+To revoke the hosted endpoint's access, delete the `mcp-hosted` token with
+`DELETE /api/tokens/{id}`; the service then receives 401 on every call.
