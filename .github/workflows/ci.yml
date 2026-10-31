@@ -18,6 +18,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      # scripts/smoke.py and scripts/recovery.py import the API client stack
+      # (httpx, python-dotenv); the runner's Python has no project packages.
+      - run: pip install -r backend/requirements.txt
       - run: python scripts/setup_env.py
       - run: npm ci
         working-directory: frontend
