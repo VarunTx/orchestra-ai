@@ -237,3 +237,9 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Safety: the token is only sent as a Bearer header and never echoed in a result; read-only by default; write tools hard-code `diagnostic_pipeline`, so no paid model call is reachable; execution and incident payloads are wrapped in an `untrusted` envelope; every response uses an explicit field whitelist; text is clipped to 2000 characters and logs to 20000.
 - Verified: **16 unit tests pass** (`tests/test_mcp_server.py`, mocked transport, no engine or database), and a live stdio smoke against the local Compose stack connected, listed eight tools, returned real storage/engine state, refused `start_diagnostic` while writes were off with a readable reason, then with `MCP_ENABLE_WRITES=true` started a real `diagnostic_pipeline` that reached `COMPLETED`.
 - Not verified: MCP against the hosted Railway API (it has no public domain, so a laptop cannot reach it; see `docs/MCP.md`), and no MCP client other than the Python SDK was exercised.
+
+## CI dependency fix — October 31, 2026
+
+- The `verify` job had failed on every push since the script checks were added: `python scripts/smoke.py` ran on the runner's bare Python, which has no `httpx` or `python-dotenv`, so the step died with `ModuleNotFoundError` before any engine check ran. The job never reached Playwright or the recovery drill.
+- The job now installs `backend/requirements.txt` (cached on that file) before running the scripts. Run `8bd0bcd` is the first recorded **success**: typecheck, production build, Compose stack, backend suite, script suite, engine smoke, Playwright and the restart-recovery drill all passed.
+- The failure was pre-existing and unrelated to the Railway or MCP work; earlier runs failed at the same step.
