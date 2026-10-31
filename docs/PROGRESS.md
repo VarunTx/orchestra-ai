@@ -261,3 +261,10 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - The SDK's DNS-rebinding protection rejected the Railway hostname with `421 Invalid Host header`; the server now takes `MCP_ALLOWED_HOSTS` and passes it to `TransportSecuritySettings`.
 - Verified against production over HTTPS: 19 tools listed, `infrastructure_health` returned storage/engine connected with four workers polling, `create_cluster` created a real cluster, `list_clusters` read it back, and the audit trail recorded `token:mcp-hosted cluster.create`.
 - Not verified: a model-driven Claude Code or Codex session against the hosted URL (Claude Code is installed but not logged in here; Codex is not installed).
+
+### Codex verification — October 31, 2026
+
+- Installed `@openai/codex` (0.166.0, already logged in via ChatGPT) and committed a project-scoped `.codex/config.toml` pointing at the hosted MCP endpoint with `bearer_token_env_var = "ORCHESTRA_MCP_TOKEN"`. `codex mcp list` reports `orchestra ... enabled | Bearer token`.
+- Ran a real Codex session against production: it called `create_cluster` and `list_clusters` over MCP. Independently confirmed in the API: cluster `Codex Demo` exists and the audit trail records `token:mcp-hosted cluster.create {'name': 'Codex Demo'}`. This closes the gap left by the Claude Code check, which could not run without a login.
+- Found and recorded an operational detail: `codex exec` uses approval policy `never`, so MCP calls are refused unless run with `--dangerously-bypass-approvals-and-sandbox`; the interactive client prompts per write instead. The committed config uses `default_tools_approval_mode = "writes"` so read tools stay unattended.
+- Not verified: the ChatGPT desktop app configuration and the OpenAI Responses API remote-MCP path (no API key used).

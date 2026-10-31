@@ -1,0 +1,17 @@
+# Project-scoped Codex MCP configuration (trusted projects only).
+# The bearer token is read from the environment, never stored here.
+#
+#   export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-hosted | cut -d= -f2-)
+#
+# Point at a local stack with ORCHESTRA_MCP_URL=http://127.0.0.1:8765/mcp by
+# replacing `url` below.
+
+[mcp_servers.orchestra]
+url = "https://mcp-production-89f3.up.railway.app/mcp"
+bearer_token_env_var = "ORCHESTRA_MCP_TOKEN"
+startup_timeout_sec = 20
+tool_timeout_sec = 90
+
+# Read tools may run unattended; anything that mutates is confirmed first, and
+# terminating a run is always prompted because it stops real engine work.
+default_tools_approval_mode = "writes"

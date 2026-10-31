@@ -152,3 +152,55 @@ export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-hosted | cut -d=
 
 To revoke the hosted endpoint's access, delete the `mcp-hosted` token with
 `DELETE /api/tokens/{id}`; the service then receives 401 on every call.
+
+## OpenAI clients
+
+### Codex CLI
+
+Installed and verified on 2026-10-31 (`codex-cli 0.166.0`, logged in via ChatGPT).
+`.codex/config.toml` is committed and project-scoped:
+
+```toml
+[mcp_servers.orchestra]
+url = "https://mcp-production-89f3.up.railway.app/mcp"
+bearer_token_env_var = "ORCHESTRA_MCP_TOKEN"
+default_tools_approval_mode = "writes"
+```
+
+```sh
+export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-hosted | cut -d= -f2-)
+codex mcp list        # orchestra ... enabled  Bearer token
+codex                 # then: "create a cluster called Payments and list clusters"
+```
+
+`default_tools_approval_mode = "writes"` means read tools run unattended while
+anything that mutates waits for confirmation. In an interactive session that is
+the intended behaviour.
+
+For **non-interactive** runs (`codex exec`), Codex's approval policy is `never`,
+so every MCP call is refused with `MCP tool call requires approval, but approval
+policy is never`. Scripted runs therefore need
+`codex exec --dangerously-bypass-approvals-and-sandbox "..."`. Use that only in
+a sandbox you control; the interactive client does not need it.
+
+### ChatGPT desktop app
+
+The desktop app, Codex CLI and the IDE extension share MCP configuration for the
+same Codex host. Add the server under **Settings → MCP servers → Add server**:
+type Streamable HTTP, URL `https://mcp-production-89f3.up.railway.app/mcp`,
+bearer token from `.env.mcp-hosted`. The same values in `~/.codex/config.toml`
+give every Codex surface the server at once.
+
+### OpenAI Responses API
+
+If you would rather call the model from a script, the Responses API accepts a
+remote MCP server directly, so the same endpoint works without a CLI:
+
+```python
+tools=[{"type": "mcp", "server_label": "orchestra",
+        "server_url": "https://mcp-production-89f3.up.railway.app/mcp",
+        "headers": {"Authorization": f"Bearer {token}"}}]
+```
+
+Not verified here: no `OPENAI_API_KEY` was used, so this path is documented from
+the API shape rather than executed.
