@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from psycopg.types.json import Jsonb
 
+from .actor import CURRENT_ACTOR
 from .db import Database, iso
 from .security import SecretBox, hash_password
 
@@ -73,6 +74,10 @@ class Store:
             candidate = f'{slug}-{suffix}'
 
     def audit(self, actor: str, action: str, resource_type: str, resource_id: str = '', detail: dict | None = None) -> None:
+        # Attribute a request to the credential that made it (a scoped machine
+        # token), while leaving explicit actors such as 'system' untouched.
+        if actor == 'owner':
+            actor = CURRENT_ACTOR.get()
         self.db.execute(
             'INSERT INTO audit_log (actor, action, resource_type, resource_id, detail)'
             ' VALUES (%s, %s, %s, %s, %s)',

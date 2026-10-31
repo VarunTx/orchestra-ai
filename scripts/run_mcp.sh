@@ -1,8 +1,9 @@
 #!/usr/bin/env sh
-# Launch the read-only MCP server over stdio for OpenCode or any MCP client.
+# Launch the MCP server over stdio for OpenCode or any MCP client.
 #
-# Loads backend/.env (control-plane token and API URL) and starts the server
-# against a running control plane. Set CONTROL_PLANE_URL to point elsewhere.
+# Loads .env (API URL and control-plane token) and starts the server against a
+# running control plane. Set MCP_CONTROL_PLANE_TOKEN to give the agent a scoped
+# token instead of the master token; set CONTROL_PLANE_URL to point elsewhere.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -11,6 +12,11 @@ if [ -f .env ]; then
   # shellcheck disable=SC1091
   . ./.env
   set +a
+fi
+
+# A scoped token bounds what the agent can do, even if it is talked into trying.
+if [ -n "${MCP_CONTROL_PLANE_TOKEN:-}" ]; then
+  CONTROL_PLANE_TOKEN="$MCP_CONTROL_PLANE_TOKEN"
 fi
 
 : "${CONTROL_PLANE_TOKEN:?CONTROL_PLANE_TOKEN is required (set it in .env or the environment)}"

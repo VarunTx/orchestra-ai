@@ -1,4 +1,4 @@
-"""Tests for the read-only MCP façade. No engine, database or network is used."""
+"""Tests for the MCP façade. No engine, database or network is used."""
 import asyncio
 import json
 
@@ -6,10 +6,11 @@ import httpx
 import pytest
 
 from app.mcp_server import (
+    TOOLS,
     UNTRUSTED_NOTICE,
+    BearerMiddleware,
     ControlPlane,
     ControlPlaneError,
-    build_client,
     build_server,
 )
 
@@ -17,13 +18,13 @@ TOKEN = 'test-token-0123456789abcdef0123456789'
 SEEN: list[httpx.Request] = []
 
 
-def make(handler, *, writes: bool = False) -> ControlPlane:
+def make(handler, *, token: str = TOKEN) -> ControlPlane:
     def recording(request: httpx.Request) -> httpx.Response:
         SEEN.append(request)
         return handler(request)
 
-    client = build_client(TOKEN, 'http://api.test', httpx.MockTransport(recording))
-    return ControlPlane(client, writes_enabled=writes)
+    return ControlPlane('http://api.test', token=token,
+                        transport=httpx.MockTransport(recording))
 
 
 def json_response(payload, status: int = 200) -> httpx.Response:
@@ -69,6 +70,13 @@ def test_bearer_token_is_sent_but_never_echoed() -> None:
     assert TOKEN not in json.dumps(result)
 
 
+def test_missing_token_is_reported_not_guessed() -> None:
+    control = make(lambda r: json_response({}), token='')
+    with pytest.raises(Exception, match='token'):
+        control.list_projects()
+    assert SEEN == []
+
+
 def test_get_execution_marks_payload_untrusted_and_clips_text() -> None:
     long_logs = 'ERROR timeout\n' * 1000
     control = make(lambda r: json_response({
@@ -86,10 +94,19 @@ def test_get_execution_marks_payload_untrusted_and_clips_text() -> None:
     assert len(task['outputData']['note']) < 9000
 
 
-def test_get_execution_rejects_non_uuid() -> None:
+@pytest.mark.parametrize('call', [
+    lambda c: c.get_execution('not-a-uuid'),
+    lambda c: c.get_incident('nope'),
+    lambda c: c.get_project('nope'),
+    lambda c: c.create_service('nope', 'svc'),
+    lambda c: c.retry_execution('nope'),
+    lambda c: c.terminate_execution('nope'),
+])
+def test_identifiers_are_validated(call) -> None:
     control = make(lambda r: json_response({}))
     with pytest.raises(ValueError):
-        control.get_execution('not-a-uuid')
+        call(control)
+    assert SEEN == []
 
 
 def test_get_incident_wraps_evidence_and_counts_observations() -> None:
@@ -126,38 +143,48 @@ def test_infrastructure_health_summarises_real_states() -> None:
     assert 'apiKey' not in json.dumps(result)
 
 
-def test_write_tools_are_disabled_unless_enabled() -> None:
-    control = make(lambda r: json_response({}))
-    with pytest.raises(PermissionError):
-        control.start_diagnostic('svc', 'x' * 20)
-    with pytest.raises(PermissionError):
-        control.acknowledge_incident('7f1f3e6c-1111-4222-8333-444455556666')
-    assert SEEN == []
-
-
-def test_start_diagnostic_is_bounded_and_never_paid() -> None:
-    control = make(lambda r: json_response({'workflowId': 'w-2'}, 201), writes=True)
-    result = control.start_diagnostic('cache-service', 'ERROR connection refused', 'high')
+def test_create_cluster_posts_whitelisted_body() -> None:
+    control = make(lambda r: json_response(
+        {'id': 'c-1', 'name': 'Payments', 'kind': 'logical', 'internal': 'x'}, 201))
+    result = control.create_cluster('Payments', description='billing')
 
     body = json.loads(SEEN[-1].content)
-    assert body['name'] == 'diagnostic_pipeline'
-    assert body['record_kind'] == 'verification'
-    assert body['failure_mode'] == 'none'
-    assert 'incident_analysis' not in json.dumps(body)
-    assert result == {'workflowId': 'w-2', 'started': 'diagnostic_pipeline'}
+    assert body == {'name': 'Payments', 'kind': 'logical', 'description': 'billing'}
+    assert result == {'cluster': {'id': 'c-1', 'name': 'Payments', 'kind': 'logical'}}
 
 
-@pytest.mark.parametrize('service,logs,severity', [
-    ('', 'x' * 20, 'high'),
-    ('bad\nname', 'x' * 20, 'high'),
-    ('svc', 'short', 'high'),
-    ('svc', 'x' * 20, 'urgent'),
-])
-def test_start_diagnostic_validates_input(service: str, logs: str, severity: str) -> None:
-    control = make(lambda r: json_response({}, 201), writes=True)
+def test_create_cluster_rejects_unknown_kind() -> None:
+    control = make(lambda r: json_response({}, 201))
     with pytest.raises(ValueError):
-        control.start_diagnostic(service, logs, severity)
+        control.create_cluster('Payments', kind='cluster')
     assert SEEN == []
+
+
+def test_create_service_requires_real_uuid_and_sends_health_url() -> None:
+    control = make(lambda r: json_response({'id': 's-1', 'name': 'api', 'current_status': 'unknown'}, 201))
+    control.create_service('7f1f3e6c-1111-4222-8333-444455556666', 'api',
+                           health_url='https://example.com/health')
+
+    body = json.loads(SEEN[-1].content)
+    assert body['project_id'] == '7f1f3e6c-1111-4222-8333-444455556666'
+    assert body['health_url'] == 'https://example.com/health'
+
+
+def test_retry_and_terminate_hit_the_engine_routes() -> None:
+    control = make(lambda r: json_response({}))
+    wid = '7f1f3e6c-1111-4222-8333-444455556666'
+    control.retry_execution(wid)
+    assert SEEN[-1].url.path == f'/api/executions/{wid}/retry'
+    control.terminate_execution(wid)
+    assert SEEN[-1].url.path == f'/api/executions/{wid}/terminate'
+
+
+def test_audit_listing_passes_a_bounded_limit() -> None:
+    control = make(lambda r: json_response([{'id': 1, 'actor': 'token:claude',
+                                             'action': 'cluster.create', 'detail': {}}]))
+    result = control.list_audit(limit=500)
+    assert SEEN[-1].url.params['limit'] == '50'
+    assert result['entries'][0]['actor'] == 'token:claude'
 
 
 def test_upstream_failure_is_bounded_and_hides_details() -> None:
@@ -177,10 +204,34 @@ def test_unreachable_api_is_reported_not_invented() -> None:
         control.infrastructure_health()
 
 
-def test_server_registers_read_tools_and_opt_in_writes() -> None:
+def test_server_registers_the_documented_tools() -> None:
     control = make(lambda r: json_response({}))
     names = {tool.name for tool in asyncio.run(build_server(control).list_tools())}
+    assert names == set(TOOLS)
+    assert {'create_cluster', 'create_project', 'start_diagnostic'} <= names
 
-    assert {'list_executions', 'get_execution', 'list_incidents', 'get_incident',
-            'infrastructure_health', 'list_workflow_definitions'} <= names
-    assert {'start_diagnostic', 'acknowledge_incident'} <= names
+
+def test_http_middleware_rejects_missing_or_wrong_token() -> None:
+    calls: list[str] = []
+
+    async def inner(scope, receive, send):
+        calls.append(scope['path'])
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b'{}'})
+
+    guard = BearerMiddleware(inner, expected='client-secret')
+
+    def run(headers):
+        sent = []
+
+        async def send(message):
+            sent.append(message)
+
+        asyncio.run(guard({'type': 'http', 'path': '/mcp', 'headers': headers},
+                          None, send))
+        return sent[0]['status'], sent
+
+    assert run([])[0] == 401
+    assert run([(b'authorization', b'Bearer wrong')])[0] == 401
+    assert run([(b'authorization', b'Bearer client-secret')])[0] == 200
+    assert calls == ['/mcp']

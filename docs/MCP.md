@@ -1,107 +1,123 @@
 # MCP server
 
-`backend/app/mcp_server.py` exposes the control plane to MCP clients (OpenCode,
-Claude Code, Claude Desktop) over **stdio**. It is a façade over the authenticated
-REST API, so authentication, audit records and project scoping stay on one path.
-It never talks to Conductor directly and never touches the database.
+`backend/app/mcp_server.py` lets an agent operate the control plane instead of
+clicking the dashboard: create a cluster, add a project and service, run a
+diagnostic, inspect the result, acknowledge an incident.
 
-## Run it
+It is a façade over the authenticated REST API, so authorization, audit records
+and project scoping stay on one path. It never talks to Conductor directly and
+never touches the database.
 
-```sh
-./scripts/run_mcp.sh          # loads .env, then starts the stdio server
-```
+## Transports
 
-`opencode.json` in this repository already registers it, so `opencode mcp list`
-shows `orchestra connected` and the tools are available as `orchestra_*`.
-The server needs a reachable control plane — `docker compose up -d postgres
-conductor api workers` for local work.
-
-Manual equivalent:
+| Mode | Command | Use |
+| --- | --- | --- |
+| stdio | `./scripts/run_mcp.sh` | one local operator, zero network exposure |
+| HTTP | `python -m app.mcp_server --http` | hosted, any MCP client on any machine |
 
 ```sh
+# HTTP, locally
 cd backend
 CONTROL_PLANE_URL=http://127.0.0.1:8000 \
-CONTROL_PLANE_TOKEN=<same value as the API> \
-python -m app.mcp_server
+CONTROL_PLANE_TOKEN=<scoped token> \
+MCP_CLIENT_TOKEN=<client secret> \
+PORT=8765 python -m app.mcp_server --http
 ```
+
+## Configuration
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `CONTROL_PLANE_URL` | `http://127.0.0.1:8000` | API base URL. The token is sent as `Authorization: Bearer`. |
-| `CONTROL_PLANE_TOKEN` | required | Control-plane token. Never logged, never returned in a tool result. |
-| `MCP_ENABLE_WRITES` | `false` | Enables the two audited write tools. |
+| `CONTROL_PLANE_URL` | `http://127.0.0.1:8000` | API base URL |
+| `CONTROL_PLANE_TOKEN` | required | Token the **server** uses to call the API. Its scope bounds everything an agent can do. |
+| `MCP_CLIENT_TOKEN` | required for `--http` | Bearer secret **clients** present to the MCP endpoint |
+| `PORT` / `HOST` | `8765` / `0.0.0.0` | HTTP listen address |
 
-Client configuration (OpenCode `opencode.json`):
+The two tokens are deliberately separate: `MCP_CLIENT_TOKEN` only proves the
+caller may talk to the MCP endpoint, while `CONTROL_PLANE_TOKEN` decides what
+that endpoint is allowed to do. A `read` token makes every write tool fail with
+a 403 from the API; it cannot be escalated by the agent.
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "servers": {
-      "orchestra": {
-        "type": "local",
-        "command": ["sh", "scripts/run_mcp.sh"],
-        "cwd": ".",
-        "environment": { "MCP_ENABLE_WRITES": "{env:MCP_ENABLE_WRITES}" }
-      }
-    }
-  }
-}
-```
+## Scopes
+
+Mint tokens with `POST /api/tokens` (`label`, `scope`); the secret is returned
+once. List with `GET /api/tokens`, revoke with `DELETE /api/tokens/{id}`.
+
+| Scope | Allows | Typical use |
+| --- | --- | --- |
+| `read` | every `GET` | dashboards, research agents |
+| `operate` | `POST`/`PATCH`/`PUT`, except publishing and credential paths | an agent that creates projects and runs workflows |
+| `admin` | everything, including `DELETE` | the dashboard session and the master token |
+
+The required scope is inferred from the verb and path (`required_scope` in
+`backend/app/auth.py`), so a new route cannot quietly become world-writable.
+Deletes, `/publish`, `/verify`, `/publication*`, `/api/connectors`,
+`/api/settings` and `/api/tokens` are admin-only. Actions taken with a scoped
+token are audited as `token:<label>`.
 
 ## Tools
 
-Read tools are always registered.
+Read: `list_clusters`, `list_projects`, `get_project`, `list_services`,
+`list_workflow_definitions`, `list_executions`, `get_execution`,
+`list_incidents`, `get_incident`, `infrastructure_health`, `list_audit`
 
-| Tool | Calls | Notes |
-| --- | --- | --- |
-| `list_executions` | `GET /api/executions` | Whitelisted summary fields; `size` capped at 25 |
-| `get_execution` | `GET /api/executions/{id}` | Task states and retry counts; inputs/outputs marked untrusted |
-| `list_incidents` | `GET /api/incidents` | `status="active"` for unresolved |
-| `get_incident` | `GET /api/incidents/{id}` | Events included; observation count only |
-| `infrastructure_health` | `GET /api/infrastructure` | Storage, engine, telemetry, API, worker polling, AI state |
-| `list_workflow_definitions` | `GET /api/workflows` | Name, version, description, task names |
+Operate: `create_cluster`, `create_project`, `create_service`, `check_service`,
+`start_diagnostic`, `retry_execution`, `terminate_execution`,
+`acknowledge_incident`
 
-Write tools require `MCP_ENABLE_WRITES=true`; while it is off they return an
-`is_error` result explaining the flag instead of failing silently.
+Deliberately absent: deletes (admin-only, not exposed as tools), workflow
+definition registration (needs a reviewed Conductor definition), connector
+credentials, and anything that reaches `incident_analysis` — the paid model call
+is not reachable from MCP. `start_diagnostic` hard-codes `diagnostic_pipeline`.
 
-| Tool | Calls | Guard |
-| --- | --- | --- |
-| `start_diagnostic` | `POST /api/executions` | Always `diagnostic_pipeline`, never `incident_analysis`; `record_kind=verification`; `failure_mode=none` |
-| `acknowledge_incident` | `POST /api/incidents/{id}/acknowledge` | Note capped at 500 characters |
+Two-tier safety: prefer the read tools before mutating, and treat
+`terminate_execution` as destructive — it stops real engine work.
+
+## Client configuration
+
+OpenCode — `opencode.json` is committed and uses the stdio launcher:
+
+```sh
+opencode mcp list      # orchestra  connected
+```
+
+Claude Code — `.mcp.json` is committed and reads two environment variables:
+
+```sh
+export ORCHESTRA_MCP_URL=http://127.0.0.1:8765/mcp
+export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-local | cut -d= -f2-)
+claude mcp list        # orchestra  connected
+```
+
+Codex — not installed or verified here. The equivalent entry is:
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.orchestra]
+url = "http://127.0.0.1:8765/mcp"
+bearer_token_env_var = "ORCHESTRA_MCP_TOKEN"
+```
 
 ## Safety properties
 
-- **No paid calls.** `incident_analysis` is not reachable: the tool hard-codes the
-  workflow name. Gemini stays disabled.
+- **No paid calls.** `incident_analysis` is unreachable; the tool hard-codes the
+  deterministic workflow, and the API itself rejects any definition containing
+  `cp_analyze_incident`.
 - **Untrusted data is labelled.** Execution inputs/outputs and incident evidence
-  are returned inside an `untrusted` envelope with a notice that the text is
-  evidence, never instructions. This is the prompt-injection boundary: the same
-  agent must not treat log text as a command.
-- **Whitelisted fields only.** Every response is built from an explicit key list,
-  so connector credentials, API keys and other new columns are not forwarded by
-  accident. `/api/connectors` is not exposed at all.
-- **Bounded output.** Strings are clipped to 2000 characters and logs to 20 000,
-  so one tool call cannot flood an agent's context.
+  arrive inside an `untrusted` envelope: evidence, never instructions.
+- **Whitelisted fields.** Every response is built from an explicit key list, so
+  credentials and new columns are not forwarded by accident.
+- **Bounded output.** Strings clip at 2 000 characters, logs at 20 000.
 - **Honest failures.** Upstream errors surface as `503: <detail>`; an unreachable
-  API says so. Nothing is invented or cached to look healthy.
+  API says so.
 
 ## Verification
 
 ```sh
-cd backend && ../.venv/bin/python -m pytest tests/test_mcp_server.py -q
-# live, against a running stack (read-only):
-.venv/bin/python scripts/mcp_smoke.py http://127.0.0.1:8000
+cd backend && ../.venv/bin/python -m pytest tests/test_mcp_server.py tests/test_auth_scopes.py -q
+../.venv/bin/python scripts/mcp_smoke.py http://127.0.0.1:8000   # stdio, live
 ```
 
-## Hosted deployments
-
-The API has no public domain: the dashboard proxies over the private network, so
-a laptop cannot reach the Railway API directly. Two supported options:
-
-1. Run the MCP server on the same private network (for example as the service's
-   own entrypoint) and expose only the transport you need.
-2. Point `CONTROL_PLANE_URL` at a local Compose stack for development.
-
-Do not publish the API domain just to reach it from a laptop; that widens the
-internet-facing surface for a convenience feature.
+Verified on 2026-10-31: 19 tools over HTTP MCP with an `operate` token created a
+real cluster and read it back, and the audit trail recorded
+`token:claude-code cluster.create`.

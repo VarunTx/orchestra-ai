@@ -113,6 +113,35 @@ async def session():
     return {'authenticated': True}
 
 
+class TokenIn(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    label: str = Field(min_length=1, max_length=80)
+    scope: Literal['read', 'operate', 'admin']
+
+
+@app.post('/api/tokens', status_code=201, dependencies=[owner])
+async def create_token(body: TokenIn):
+    """Mint a scoped machine token. The secret is returned once and never stored."""
+    row, secret = auth.mint_token(body.label, body.scope)
+    store.audit('owner', 'token.create', 'api_token', str(row['id']), {'scope': body.scope})
+    return {**{k: iso(v) if hasattr(v, 'isoformat') else v for k, v in row.items()},
+            'token': secret, 'note': 'Store this now; it cannot be shown again.'}
+
+
+@app.get('/api/tokens', dependencies=[owner])
+async def tokens():
+    return [{k: iso(v) if hasattr(v, 'isoformat') else v for k, v in row.items()}
+            for row in auth.list_tokens()]
+
+
+@app.delete('/api/tokens/{token_id}', dependencies=[owner])
+async def revoke_token(token_id: UUID):
+    if not auth.revoke_token(token_id):
+        raise HTTPException(404, 'No active token with that id')
+    store.audit('owner', 'token.revoke', 'api_token', str(token_id))
+    return {'revoked': True}
+
+
 @app.delete('/api/session')
 async def logout(authorization: str = Header(default='')):
     if authorization.startswith('Bearer '):

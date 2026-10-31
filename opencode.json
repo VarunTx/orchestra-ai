@@ -5,10 +5,7 @@
       "orchestra": {
         "type": "local",
         "command": ["sh", "scripts/run_mcp.sh"],
-        "cwd": ".",
-        "environment": {
-          "MCP_ENABLE_WRITES": "{env:MCP_ENABLE_WRITES}"
-        }
+        "cwd": "."
       }
     }
   }
