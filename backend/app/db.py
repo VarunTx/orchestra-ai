@@ -9,6 +9,8 @@ from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.conninfo import make_conninfo
+from psycopg import sql
 from psycopg_pool import ConnectionPool
 
 log = logging.getLogger('orchestra.db')
@@ -36,14 +38,8 @@ class Database:
 
     # -- lifecycle ---------------------------------------------------------
     def _dsn(self, database: str | None = None) -> str:
-        s = self.settings
-        from urllib.parse import quote
-
-        return (
-            f"postgresql://{quote(s.database_user, safe='')}:"
-            f"{quote(s.database_password, safe='')}@"
-            f"{s.database_host}:{s.database_port}/{database or s.database_name}"
-        )
+        return make_conninfo(self.settings.database_url,
+                             dbname=database or self.settings.database_name)
 
     def ensure_database(self) -> None:
         """Create the application database if it does not exist yet."""
@@ -52,7 +48,8 @@ class Database:
                 'SELECT 1 FROM pg_database WHERE datname = %s', (self.settings.database_name,)
             ).fetchone()
             if not exists:
-                conn.execute(f'CREATE DATABASE "{self.settings.database_name}"')
+                conn.execute(sql.SQL('CREATE DATABASE {}').format(
+                    sql.Identifier(self.settings.database_name)))
                 log.info('created application database %s', self.settings.database_name)
 
     def open(self, wait_seconds: float = 30) -> None:

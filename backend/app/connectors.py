@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -38,15 +39,25 @@ def _classify(code: int, expected: int) -> str:
 async def probe_http(url: str, *, timeout: float, expected_status: int,
                      allow_private: bool) -> ProbeResult:
     """Perform one bounded health check with SSRF protection and no redirects."""
+    started = time.monotonic()
+    deadline = asyncio.get_running_loop().time() + timeout
     try:
-        target = resolve_public(url, allow_private=allow_private)
+        # Address resolution is blocking; keep it off the API event loop and
+        # charge it to the same deadline as the subsequent HTTP request.
+        async with asyncio.timeout_at(deadline):
+            target = await asyncio.to_thread(resolve_public, url, allow_private=allow_private)
+    except TimeoutError:
+        return ProbeResult('unknown', message='check not performed: target resolution timed out')
     except UnsafeTarget as exc:
         # The target is unusable, which is a monitoring problem, not an application failure.
         return ProbeResult('unknown', message=f'check not performed: {exc}')
-    started = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False,
-                                     headers={'User-Agent': USER_AGENT}) as client:
+        # HTTPX limits individual socket operations; a trickling response also
+        # needs a total deadline so it cannot monopolize a collector slot.
+        async with asyncio.timeout_at(deadline), httpx.AsyncClient(
+            timeout=timeout, follow_redirects=False,
+            headers={'User-Agent': USER_AGENT},
+        ) as client:
             async with client.stream('GET', target) as response:
                 body = 0
                 async for chunk in response.aiter_bytes():
@@ -64,7 +75,7 @@ async def probe_http(url: str, *, timeout: float, expected_status: int,
                     evidence={'content_type': response.headers.get('content-type', ''),
                               'bytes_read': body, 'redirected': 300 <= response.status_code < 400},
                 )
-    except httpx.TimeoutException:
+    except (TimeoutError, httpx.TimeoutException):
         return ProbeResult('down', latency_ms=int((time.monotonic() - started) * 1000),
                            message=f'no response within {timeout:.0f}s')
     except httpx.HTTPError as exc:

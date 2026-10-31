@@ -13,7 +13,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .connectors import ConnectorError, GitHubConnector, RailwayConnector
-from .monitor import check_service
+from .monitor import apply_monitoring_observation, check_service
 from .store import Store, serialize
 
 SERVICE_KINDS = Literal['web', 'api', 'database', 'worker', 'queue', 'cache', 'external']
@@ -31,6 +31,17 @@ def _clean_url(value: str | None) -> str | None:
         raise ValueError('Credentials must not be embedded in URLs')
     if parts.scheme not in ('http', 'https') or not parts.hostname:
         raise ValueError('URL must be an absolute http or https URL')
+    # Accessing port validates both its numeric form and its allowed range.
+    _ = parts.port
+    return value
+
+
+def _clean_repo_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    value = value.strip().removesuffix('.git').replace('git@github.com:', 'https://github.com/').replace('http://github.com/', 'https://github.com/').rstrip('/')
+    if not __import__('re').fullmatch(r'https://github[.]com/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+', value) or value.rsplit('/', 1)[-1] in {'.', '..'}:
+        raise ValueError('Repository must be a github.com owner/repository URL')
     return value
 
 
@@ -86,12 +97,7 @@ class ProjectIn(BaseModel):
     @field_validator('repo_url')
     @classmethod
     def _repo(cls, value: str | None) -> str | None:
-        if not value:
-            return None
-        value = value.strip().removesuffix('.git').replace('git@github.com:','https://github.com/').replace('http://github.com/','https://github.com/').rstrip('/')
-        if not __import__('re').fullmatch(r'https://github[.]com/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+',value) or value.rsplit('/',1)[-1] in {'.','..'}:
-            raise ValueError('Repository must be a github.com owner/repository URL')
-        return value
+        return _clean_repo_url(value)
 
 
 class ProjectPatch(BaseModel):
@@ -102,6 +108,8 @@ class ProjectPatch(BaseModel):
     cluster_id: uuid.UUID | None = None
     repo_url: str | None = Field(default=None, max_length=300)
     repo_branch: str | None = Field(default=None, max_length=120)
+
+    _repo = field_validator('repo_url')(classmethod(lambda cls, value: _clean_repo_url(value)))
 
 
 class ResourceRef(BaseModel):
@@ -675,9 +683,8 @@ def build_router(settings, store: Store, auth, engine) -> APIRouter:
             service['id'], status=body.status, source='agent',
             latency_ms=body.latency_ms, http_status=None, message=body.message,
             evidence={'agent': body.agent_key})
-        updated = store.apply_observation(service, observation)
-        store.recompute_project_status(service['project_id'])
-        return {'service_id': service['id'], 'status': updated['current_status']}
+        result = await apply_monitoring_observation(store, settings, service, observation)
+        return {'service_id': service['id'], 'status': result['service']['current_status']}
 
     # -- controlled workflow registration ----------------------------------
     def validate_definition(definition: dict) -> dict:

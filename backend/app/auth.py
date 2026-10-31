@@ -20,7 +20,9 @@ class Auth:
 
     # -- credential checks -------------------------------------------------
     def master_ok(self, token: str) -> bool:
-        return bool(token) and hmac.compare_digest(token, self.settings.control_plane_token)
+        return bool(token) and hmac.compare_digest(
+            token.encode('utf-8'), self.settings.control_plane_token.encode('utf-8'),
+        )
 
     def password_ok(self, password: str) -> bool:
         if not password or not self.settings.owner_password:

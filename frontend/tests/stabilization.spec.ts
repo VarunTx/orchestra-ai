@@ -158,6 +158,29 @@ test("two generic projects, service editing, draft work and URL tabs work withou
   }
 });
 
+test("a monitoring project can be created without a repository", async ({ page }) => {
+  await signIn(page);
+  let id: string | undefined;
+  try {
+    await page.goto('/projects/new');
+    await page.getByLabel('Project name').fill('Verification URL-only ' + Date.now());
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(page.getByText('Where does it run?', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('button', { name: 'Create project', exact: true }).click();
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    id = new URL(page.url()).pathname.split('/').pop();
+    const project = await (await page.request.get(`/api/projects/${id}`)).json();
+    expect(project.repo_url).toBeNull();
+  } finally {
+    if (id) await page.request.delete(`/api/projects/${id}`, {
+      headers: { Origin: 'http://127.0.0.1:3000' },
+    });
+  }
+});
+
 test("existing screens expose reachable controls at four widths and handle session expiry", async ({
   page,
 }) => {

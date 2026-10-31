@@ -59,7 +59,7 @@ export default function NewProjectPage() {
       <PageHeading
         eyebrow="PROJECTS / ADD"
         title="Add a project"
-        description="Start with a GitHub repository and the URLs you want to monitor. Coding setup can wait."
+        description="Add a project and the URLs you want to monitor. A GitHub repository and coding setup are optional."
         actions={
           <Link href="/projects" className="button button-outline">
             Cancel
@@ -97,9 +97,8 @@ export default function NewProjectPage() {
               />
             </label>
             <label>
-              GitHub repository
+              GitHub repository (optional)
               <input
-                required
                 type="url"
                 pattern="https://github.com/[^/]+/[^/]+/?"
                 placeholder="https://github.com/you/repo"
@@ -247,7 +246,7 @@ export default function NewProjectPage() {
           <>
             <h2>{name}</h2>
             <p>
-              {repo} · {branch}
+              {repo ? `${repo} · ${branch}` : "No repository configured"}
             </p>
             <p>Environments: {environments.join(", ")}</p>
             <ul>

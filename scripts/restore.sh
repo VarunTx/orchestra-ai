@@ -36,17 +36,34 @@ SOURCE="${BASE%%-*}"
 
 if (( IN_PLACE )); then
   TARGET="${TARGET:-$SOURCE}"
-  printf 'This will REPLACE the live "%s" database. Type the name to continue: ' "$TARGET"
-  read -r typed
-  [[ "$typed" == "$TARGET" ]] || { echo "aborted"; exit 1; }
-  docker compose exec -T postgres psql -U conductor -d "$TARGET" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 else
   TARGET="${TARGET:-${SOURCE}_restore}"
 fi
 
-docker compose exec -T postgres psql -U conductor -d postgres -tAc \
-  "SELECT 1 FROM pg_database WHERE datname='${TARGET}'" | grep -q 1 \
-  || docker compose exec -T postgres psql -U conductor -d postgres -c "CREATE DATABASE \"${TARGET}\""
+# This name is interpolated into SQL below; accept only simple identifiers.
+[[ "$TARGET" =~ ^[a-zA-Z_][a-zA-Z0-9_]{0,62}$ ]] || {
+  echo 'invalid database name: use letters, digits and underscores (max 63 characters)' >&2
+  exit 1
+}
+EXISTS="$(docker compose exec -T postgres psql -U conductor -d postgres -v ON_ERROR_STOP=1 -tAc \
+  "SELECT 1 FROM pg_database WHERE datname='${TARGET}'")"
+if (( ! IN_PLACE )) && [[ "$EXISTS" =~ 1 ]]; then
+  echo "database already exists: $TARGET; choose a new name or use --in-place with confirmation" >&2
+  exit 1
+fi
+
+if (( IN_PLACE )); then
+  printf 'This will REPLACE the live "%s" database. Type the name to continue: ' "$TARGET"
+  read -r typed
+  [[ "$typed" == "$TARGET" ]] || { echo "aborted"; exit 1; }
+  if [[ "$EXISTS" =~ 1 ]]; then
+    docker compose exec -T postgres psql -U conductor -d "$TARGET" -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+  fi
+fi
+
+if [[ ! "$EXISTS" =~ 1 ]]; then
+  docker compose exec -T postgres psql -U conductor -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"${TARGET}\""
+fi
 
 gunzip -c "$FILE" | docker compose exec -T postgres psql -U conductor -d "$TARGET" -v ON_ERROR_STOP=1 >/dev/null
 docker compose exec -T postgres psql -U conductor -d "$TARGET" -c 'ANALYZE' >/dev/null

@@ -2,6 +2,7 @@ from urllib.parse import quote
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from psycopg.conninfo import conninfo_to_dict
 
 
 class Settings(BaseSettings):
@@ -58,6 +59,9 @@ class Settings(BaseSettings):
             self.database_url = (
                 f"postgresql://{quote(self.database_user, safe='')}:"
                 f"{quote(self.database_password, safe='')}@"
-                f"{self.database_host}:{self.database_port}/{self.database_name}"
+                f"{self.database_host}:{self.database_port}/{quote(self.database_name, safe='')}"
             )
+        else:
+            # An explicit DSN is authoritative, including its database and TLS options.
+            self.database_name = conninfo_to_dict(self.database_url).get('dbname') or self.database_name
         return self

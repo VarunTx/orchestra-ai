@@ -378,8 +378,8 @@ class Store:
         if 'external_ref' in allowed:
             allowed['external_ref'] = Jsonb(allowed['external_ref'] or {})
         if allowed:
-            if allowed.get('monitoring_enabled') is False:
-                allowed['current_status'] = 'disabled'
+            # Disabled is a read-model state; retain the last observation state
+            # so resuming monitoring can still resolve an existing outage.
             sets = ', '.join(f'{k} = %s' for k in allowed)
             row = self.db.one(
                 f'UPDATE services SET {sets}, updated_at = now() WHERE id = %s RETURNING project_id',

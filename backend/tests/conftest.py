@@ -8,6 +8,15 @@ os.environ['DATABASE_NAME'] = os.environ['TEST_DATABASE_NAME']
 os.environ.setdefault('DATABASE_HOST', 'localhost')
 os.environ.setdefault('MONITOR_ENABLED', 'false')
 
+# Override the database inside an explicit DSN as well as DATABASE_NAME. Otherwise
+# a developer's DATABASE_URL could make truncating fixtures touch their app data.
+from psycopg.conninfo import make_conninfo
+from app.settings import Settings
+
+os.environ['DATABASE_URL'] = make_conninfo(
+    Settings().database_url, dbname=os.environ['TEST_DATABASE_NAME'],
+)
+
 
 def database_reachable() -> bool:
     """Create the isolated test database when PostgreSQL is reachable."""

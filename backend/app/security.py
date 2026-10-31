@@ -39,7 +39,11 @@ def _forbidden(ip: ipaddress._BaseAddress) -> bool:
 
 def resolve_public(url: str, *, allow_private: bool = False) -> str:
     """Validate a monitoring/probe URL and return it unchanged when safe."""
-    parts = urlsplit(url.strip())
+    try:
+        parts = urlsplit(url.strip())
+        port = parts.port
+    except ValueError as exc:
+        raise UnsafeTarget('URL has an invalid host or port') from exc
     if parts.scheme not in ('http', 'https'):
         raise UnsafeTarget('only http and https URLs can be monitored')
     if parts.username or parts.password:
@@ -51,7 +55,7 @@ def resolve_public(url: str, *, allow_private: bool = False) -> str:
         if parts.scheme != 'https':
             raise UnsafeTarget('monitoring requires https unless private targets are enabled')
         try:
-            infos = socket.getaddrinfo(host, parts.port or 443, proto=socket.IPPROTO_TCP)
+            infos = socket.getaddrinfo(host, port or 443, proto=socket.IPPROTO_TCP)
         except socket.gaierror as exc:
             raise UnsafeTarget(f'host could not be resolved: {host}') from exc
         for info in infos:

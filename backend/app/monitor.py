@@ -59,6 +59,11 @@ async def check_service(store: Store, settings, service: dict) -> dict:
         latency_ms=result.latency_ms, http_status=result.http_status,
         message=result.message, evidence=result.evidence,
     )
+    return await apply_monitoring_observation(store, settings, service, observation)
+
+
+async def apply_monitoring_observation(store: Store, settings, service: dict, observation: dict) -> dict:
+    """Apply the same threshold, incident and alert lifecycle for every probe source."""
     updated = store.apply_observation(service, observation)
     previous, current = updated['_previous_status'], updated['current_status']
     store.recompute_project_status(service['project_id'])
