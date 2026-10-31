@@ -6,3 +6,4 @@ conductor-python
 google-genai
 psycopg[binary,pool]
 pytest
+mcp
