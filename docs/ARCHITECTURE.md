@@ -1,6 +1,6 @@
 # Architecture
 
-Reference for the code as it exists today. Where behaviour is uncertain or unverified, this document says so. See `docs/PROGRESS.md` for verified milestones and `docs/RAILWAY.md` for the deployed trial stack.
+Reference for the code as it exists today. Where behaviour is uncertain or unverified, this document says so. See `docs/PROGRESS.md` for verified milestones. The default deployment is the local Docker Compose stack; `docs/DEPLOY_FREE.md` describes an optional, never-verified VM profile.
 
 ## Topology (Docker Compose)
 
@@ -12,7 +12,8 @@ Reference for the code as it exists today. Where behaviour is uncertain or unver
 | `conductor` | `conductoross/conductor` pinned by digest | `:8080`, private network | Sole orchestration engine |
 | `redis` | `valkey/valkey:8.1-alpine` | private network | Conductor execution lock only (BSD-licensed) |
 | `postgres` | `postgres:16.6-alpine` | private network | Two databases: `conductor` (engine) and `orchestra` (platform) |
-| `caddy` | `caddy:2.10-alpine`, profile `public` | `:80`, `:443` | TLS front door for the free-VM deployment |
+| `mcp` | `Dockerfile.mcp`, profile `mcp` | `127.0.0.1:8765` | Optional MCP tool surface; calls `api:8000` with an `operate`-scoped token |
+| `caddy` | `caddy:2.10-alpine`, profile `public` | `:80`, `:443` | TLS front door for the optional free-VM deployment |
 
 The platform database is created on first API startup and migrated from `backend/app/migrations/`. It never lives inside Conductor's schema, so engine upgrades and platform migrations are independent.
 
@@ -168,11 +169,13 @@ Additional definitions may be registered through `POST /api/workflows/definition
 | `MONITOR_ENABLED`, `MONITOR_TICK_SECONDS`, `MONITOR_CONCURRENCY`, `MONITOR_RETENTION_DAYS` | api | Collector |
 | `HTTP_CHECK_ALLOW_PRIVATE` | api | Development-only private targets |
 | `ENABLE_GEMINI`, `GEMINI_API_KEY`, `GEMINI_MODEL` | api, workers | Billable; disabled by default |
+| `MCP_CLIENT_TOKEN`, `MCP_CONTROL_PLANE_TOKEN` | mcp | Client secret and `operate`-scoped control-plane token, read from `.env.mcp-local`; never the master token |
+| `CONTROL_PLANE_URL`, `MCP_ALLOWED_HOSTS`, `PORT` | mcp | `http://api:8000`, exact Host values including `:8765`, and `8765` |
 
 ## Operating and verifying
 
 - `make up` builds and waits for the stack; `make test-db` runs the complete backend suite in the Compose network; `make typecheck`, `make build`, `make browser`, `make smoke`.
-- `scripts/deploy_wizard.sh` provisions a free VM deployment (`compose.prod.yaml` + Caddy profile); `scripts/backup.sh` and `scripts/restore.sh` cover both databases. See `docs/DEPLOY_FREE.md`.
+- `scripts/deploy_wizard.sh` provisions an optional free VM deployment (`compose.prod.yaml` + Caddy profile); that profile has never been verified on a real host. `scripts/backup.sh` and `scripts/restore.sh` cover both databases. See `docs/DEPLOY_FREE.md`.
 - `scripts/docker_agent.py` pushes local container health from a machine that owns Docker.
 - `scripts/smoke.py` exercises the real engine; `scripts/recovery.py` is destructive and local-only.
 - CI runs typecheck, build, Compose up, backend tests, smoke, Playwright and recovery, then tears the stack down.

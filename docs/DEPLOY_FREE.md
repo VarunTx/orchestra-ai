@@ -1,12 +1,20 @@
-# Deploy Orchestra AI on a free VM
+# Optional: deploy Orchestra AI on a free VM
 
-The target is one small server you own, running the whole stack with Docker Compose. No PaaS trial, no per-service pricing, no expiring credit.
+**The default deployment is the local Docker Compose stack.** Run it with
+`python3 scripts/setup_env.py` and `make up` (or `docker compose up -d --build
+--wait`). It needs no VM, no domain and no hosted account. The rest of this page
+describes an **optional** always-on deployment for when you want the stack to
+keep running while your own machine sleeps.
+
+The VM profile has **never been verified on a real host**. `compose.prod.yaml`,
+Caddy TLS and the wizard's remote steps are configuration and instructions, not
+a proven deployment. Treat them as unverified until you run them yourself.
 
 ## Why not Railway/Render/Fly
 
 | Option | Reality (verified October 2026) |
 | --- | --- |
-| Railway | $5 trial credit, up to 30 days, then it stops. Five-service and 1 GB RAM limits already cap Conductor. |
+| Railway | An earlier hosted trial was used for a demo and then retired. It is no longer the default or a supported current deployment path. |
 | Render free | Web services sleep; no free background workers or Postgres beyond a short trial. |
 | Fly.io | Free tier removed for new accounts; card required. |
 | **Oracle Always Free A1** | **2 OCPU / 12 GB RAM / 200 GB block / 10 TB egress, free for the life of the account** |
@@ -35,7 +43,7 @@ Nothing in the default profile calls a paid API. Gemini stays disabled.
 
 **Public HTTPS.** Caddy terminates TLS with a Let's Encrypt certificate for a free DuckDNS name and proxies to `web:3000`. Only ports 80/443 are opened; the API, PostgreSQL, Valkey and Conductor stay on the private Compose network.
 
-## Run the wizard
+## Run the wizard (optional)
 
 ```sh
 ./scripts/deploy_wizard.sh
@@ -107,4 +115,4 @@ Schedule it:
 - Single VM: no high availability. A reboot is a short outage; Compose restarts services on boot if Docker is enabled.
 - Tailscale mode depends on one free third-party service; Headscale removes that dependency at the cost of running another service.
 - Conductor's metrics are scraped on demand, not stored: history lives in the app database, not in Prometheus.
-- The Railway trial deployment is separate and will expire; this VM profile does not reuse it.
+- The VM profile is optional and has never been verified on a real host; it does not reuse the retired Railway deployment.

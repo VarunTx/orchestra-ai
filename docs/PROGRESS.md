@@ -268,3 +268,38 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Ran a real Codex session against production: it called `create_cluster` and `list_clusters` over MCP. Independently confirmed in the API: cluster `Codex Demo` exists and the audit trail records `token:mcp-hosted cluster.create {'name': 'Codex Demo'}`. This closes the gap left by the Claude Code check, which could not run without a login.
 - Found and recorded an operational detail: `codex exec` uses approval policy `never`, so MCP calls are refused unless run with `--dangerously-bypass-approvals-and-sandbox`; the interactive client prompts per write instead. The committed config uses `default_tools_approval_mode = "writes"` so read tools stay unattended.
 - Not verified: the ChatGPT desktop app configuration and the OpenAI Responses API remote-MCP path (no API key used).
+
+## Local Compose as the default deployment — November 4, 2026
+
+- Made the local Docker Compose stack the documented default deployment. The Railway project itself was not touched, changed or deleted by this work; `docs/RAILWAY.md` now records only that the hosted deployment was retired and points at this history.
+- Added an `mcp` service to `compose.yaml`, built from `Dockerfile.mcp`, published only on `127.0.0.1:8765:8765`, with `CONTROL_PLANE_URL=http://api:8000`, `PORT=8765`, `depends_on` the healthy API, `restart: unless-stopped` and a `/healthz` healthcheck. The SDK compares `Host` values exactly including the port, so `MCP_ALLOWED_HOSTS` lists `localhost`, `127.0.0.1`, `localhost:8765` and `127.0.0.1:8765`.
+- Used Compose profile `mcp` rather than enabling the service in `make up`: `.env.mcp-local` is gitignored, so a fresh clone and CI would otherwise fail before the stack starts. `env_file` is marked `required: false`; the service is started with `docker compose --profile mcp up -d --build --wait mcp`.
+- The service maps `.env.mcp-local`'s `MCP_CONTROL_PLANE_TOKEN` (operate-scoped) to `CONTROL_PLANE_TOKEN` and refuses to start without it. It never uses the master token from `.env`.
+- Added an unauthenticated `GET /healthz` route to `backend/app/mcp_server.py` for the container healthcheck. The bearer guard still rejects `/mcp` without a token.
+- Pointed `.mcp.json`, `.codex/config.toml` and `docs/MCP.md` at the local endpoint (`opencode.json` was unchanged: it already uses the local stdio launcher); removed hosted Railway endpoint instructions and hostnames. `docs/FREE_DEMO.md` now records that Quick Tunnels are no longer used, and `docs/DEPLOY_FREE.md` states that local Compose is the default, the VM is optional, and the VM profile has never been verified on a real host. README and architecture references were corrected; Railway connector text is unchanged.
+
+### Executed verification
+
+- `docker compose config --quiet` → exit 0. Default services are `postgres`, `redis`, `conductor`, `api`, `web`, `workers`; adding `--profile mcp` lists `mcp`.
+- `docker compose build mcp` → image `orchestra-ai-mcp:latest` built successfully.
+- `docker compose run --rm --no-deps -v "$PWD/backend:/app" api python -m pytest tests/test_mcp_server.py -q` → **23 passed**.
+- `docker compose run --rm --no-deps -v "$PWD/backend:/app" api python -m pytest tests -q` → **119 passed, 1 skipped** in 11.51 s (the skip is the existing opt-in engine contract test).
+- The built image was run on a temporary alternate loopback port (`18765`), not on 8765: `GET /healthz` → 200, unauthenticated `POST /mcp` → 401, authenticated empty POST → 400 (host accepted, body invalid). The temporary container was removed.
+- `git grep -n 'up.railway.app'` now matches only the three historical entries in this file (lines about the October trial and the hosted MCP service).
+
+### Not verified — do not treat as complete
+
+- `docker compose up -d --build --wait mcp` and the required `GET http://127.0.0.1:8765/healthz` → 200 check could not run: PID 35601, an older `python -m app.mcp_server --http` process started four days earlier, already listens on port 8765 (bound to all interfaces, `*:8765`). It was deliberately not killed. That old process returns 404 for `/healthz` and 401 for unauthenticated `POST /mcp`, so those responses do **not** validate the new service.
+- `.env.mcp-local` currently defines only `MCP_CLIENT_TOKEN`. It lacks the required `MCP_CONTROL_PLANE_TOKEN`, so the Compose service would refuse to start even after 8765 is free. The file was not edited. MCP clients were not re-pointed or exercised against a running local service.
+- `scripts/mcp_smoke.py` was read and not run: it targets a stdio server and still expects the removed `MCP_ENABLE_WRITES` gate, so it needs updating before it can validate the current scoped-token HTTP surface.
+- Railway was not contacted, deleted, redeployed or otherwise modified. The optional VM profile remains unverified on a real host, and no frontend build or browser suite was run because this change touched no frontend source.
+
+### Local MCP service brought up — November 5, 2026
+
+- The owner cancelled the Railway Hobby subscription in the dashboard. `railway status` now reports all five services and PostgreSQL **Offline**; the former dashboard and MCP URLs return 404. The project and its volume still exist and have not been deleted.
+- Stopped the stale PID 35601 listener. It had been started from an OpenCode shell on October 31, held a non-master token and listened on all interfaces behind the client token. Its graceful shutdown waited on an open client connection, so it was killed after two `SIGTERM`s.
+- Minted an `operate`-scoped token (label `mcp-local`) through `POST /api/tokens` and appended it as `MCP_CONTROL_PLANE_TOKEN` to `.env.mcp-local` (mode 600, gitignored). The value was never printed. The existing `MCP_CLIENT_TOKEN` was kept, so existing local client configuration still authenticates.
+- `docker compose --profile mcp up -d --build --wait mcp` → `orchestra-ai-mcp-1` **healthy**, published only on `127.0.0.1:8765`.
+- Verified: `GET /healthz` → 200; unauthenticated `POST /mcp` → 401; the server process (PID 1) holds the scoped token, which differs from the master token; with that token `GET /api/projects` → 200 and the admin-only `DELETE /api/tokens/{id}` → 403.
+- A real MCP client (Claude Code, user-scoped `orchestra-local` → `http://127.0.0.1:8765/mcp`) reconnected to the container: `infrastructure_health` returned storage/engine connected, API up, four workers polling, Gemini disabled; `list_projects` returned five projects.
+- Not verified: the project-scoped `.mcp.json` entry, which needs `ORCHESTRA_MCP_TOKEN` exported to the client and was rejected with 401 here; Codex and OpenCode against the container; behaviour across a Mac reboot. `scripts/mcp_smoke.py` remains stale.

@@ -51,4 +51,4 @@ Two additional secrets are required for a hosted deployment:
 - `OWNER_PASSWORD` — dashboard password (stored only as a scrypt hash). Without it, only the master API token can sign in.
 - `SECRET_KEY` — encrypts connector credentials at rest. Rotating it invalidates stored connector tokens.
 
-The monitoring collector runs inside the API process; no extra service is needed. Keep `HTTP_CHECK_ALLOW_PRIVATE=false` outside local development and set `COOKIE_SECURE=true` only behind TLS. Railway service resources were not changed by this work.
+The monitoring collector runs inside the API process; no extra service is needed. Keep `HTTP_CHECK_ALLOW_PRIVATE=false` outside local development and set `COOKIE_SECURE=true` only behind TLS. No hosted service was changed by this work.

@@ -23,6 +23,7 @@ import uuid
 import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from starlette.responses import JSONResponse
 
 DEFAULT_URL = 'http://127.0.0.1:8000'
 MAX_TEXT = 2000
@@ -338,6 +339,13 @@ def build_server(control: ControlPlane) -> MCPServer:
     )
     for name in TOOLS:
         server.add_tool(getattr(control, name))
+
+    # Unauthenticated liveness for the Compose healthcheck. BearerMiddleware
+    # deliberately bypasses this path; it exposes no control-plane data.
+    @server.custom_route('/healthz', methods=['GET'])
+    async def healthz(_request) -> JSONResponse:
+        return JSONResponse({'status': 'ok'})
+
     return server
 
 

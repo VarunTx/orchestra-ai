@@ -13,17 +13,26 @@ never touches the database.
 | Mode | Command | Use |
 | --- | --- | --- |
 | stdio | `./scripts/run_mcp.sh` | one local operator, zero network exposure |
-| HTTP | `python -m app.mcp_server --http` | hosted, any MCP client on any machine |
+| HTTP | `docker compose --profile mcp up -d --build --wait mcp` | local agents over `127.0.0.1:8765` |
 
-Hosted endpoint: **https://mcp-production-89f3.up.railway.app/mcp** (Railway
-service `mcp`, built from `Dockerfile.mcp`). It holds an `operate`-scoped token,
-so it cannot delete anything.
+The default deployment is the local Docker Compose stack. The HTTP transport is
+the `mcp` service in `compose.yaml`, built from `Dockerfile.mcp`, and is bound to
+loopback only: **http://127.0.0.1:8765/mcp**.
+
+### Why the `mcp` profile
+
+`.env.mcp-local` is gitignored, so it is absent in a fresh clone and in CI.
+Enabling the service by default would make `make up` / `docker compose up`
+fail before the rest of the stack starts. The service therefore lives behind a
+Compose profile named `mcp`; start it explicitly with the command above. The
+`mcp` profile is not part of `make up` unless you enable the profile.
+
+Run it locally without Docker if you prefer:
 
 ```sh
-# HTTP, locally
 cd backend
 CONTROL_PLANE_URL=http://127.0.0.1:8000 \
-CONTROL_PLANE_TOKEN=<scoped token> \
+CONTROL_PLANE_TOKEN=<operate-scoped token> \
 MCP_CLIENT_TOKEN=<client secret> \
 PORT=8765 python -m app.mcp_server --http
 ```
@@ -32,11 +41,26 @@ PORT=8765 python -m app.mcp_server --http
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `CONTROL_PLANE_URL` | `http://127.0.0.1:8000` | API base URL |
+| `CONTROL_PLANE_URL` | `http://127.0.0.1:8000` | API base URL; the Compose service uses `http://api:8000` |
 | `CONTROL_PLANE_TOKEN` | required | Token the **server** uses to call the API. Its scope bounds everything an agent can do. |
 | `MCP_CLIENT_TOKEN` | required for `--http` | Bearer secret **clients** present to the MCP endpoint |
-| `PORT` / `HOST` | `8765` / `0.0.0.0` | HTTP listen address |
-| `MCP_ALLOWED_HOSTS` | localhost | Comma-separated `Host` values accepted by the SDK's DNS-rebinding protection. Must include the public hostname when hosted. |
+| `PORT` / `HOST` | `8765` / `0.0.0.0` | HTTP listen address; the Compose service sets `PORT=8765` |
+| `MCP_ALLOWED_HOSTS` | `localhost`, `127.0.0.1` (with and without `:8765`) | Comma-separated `Host` values accepted by the SDK's DNS-rebinding protection |
+
+The SDK compares the `Host` header exactly, **including a non-default port**.
+`MCP_ALLOWED_HOSTS` must therefore contain the `host:port` forms clients send:
+`localhost:8765` and `127.0.0.1:8765`, as well as the bare hostnames.
+
+The Compose service reads `.env.mcp-local` (gitignored). That file must define:
+
+```sh
+MCP_CLIENT_TOKEN=<client secret>
+MCP_CONTROL_PLANE_TOKEN=<operate-scoped token, never the master token>
+```
+
+The service maps `MCP_CONTROL_PLANE_TOKEN` to `CONTROL_PLANE_TOKEN` and refuses
+to start if the key is absent. It never falls back to the master token in
+`.env`.
 
 The two tokens are deliberately separate: `MCP_CLIENT_TOKEN` only proves the
 caller may talk to the MCP endpoint, while `CONTROL_PLANE_TOKEN` decides what
@@ -86,7 +110,8 @@ OpenCode — `opencode.json` is committed and uses the stdio launcher:
 opencode mcp list      # orchestra  connected
 ```
 
-Claude Code — `.mcp.json` is committed and reads two environment variables:
+Claude Code — `.mcp.json` is committed, defaults to the local HTTP endpoint and
+reads two environment variables:
 
 ```sh
 export ORCHESTRA_MCP_URL=http://127.0.0.1:8765/mcp
@@ -94,13 +119,14 @@ export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-local | cut -d= 
 claude mcp list        # orchestra  connected
 ```
 
-Codex — not installed or verified here. The equivalent entry is:
+Codex — `.codex/config.toml` is project-scoped and points at the same local
+endpoint:
 
 ```toml
-# ~/.codex/config.toml
 [mcp_servers.orchestra]
 url = "http://127.0.0.1:8765/mcp"
 bearer_token_env_var = "ORCHESTRA_MCP_TOKEN"
+default_tools_approval_mode = "writes"
 ```
 
 ## Safety properties
@@ -120,55 +146,45 @@ bearer_token_env_var = "ORCHESTRA_MCP_TOKEN"
 
 ```sh
 cd backend && ../.venv/bin/python -m pytest tests/test_mcp_server.py tests/test_auth_scopes.py -q
-../.venv/bin/python scripts/mcp_smoke.py http://127.0.0.1:8000   # stdio, live
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/healthz
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8765/mcp
 ```
 
-Verified on 2026-10-31: 19 tools over HTTP MCP with an `operate` token created a
-real cluster and read it back, and the audit trail recorded
-`token:claude-code cluster.create`.
+The first `curl` should return `200`; the unauthenticated POST should return
+`401`. `GET /healthz` is the Compose healthcheck and exposes no control-plane
+data.
 
-## Hosted deployment
+`scripts/mcp_smoke.py` targets a stdio server and still asserts the removed
+`MCP_ENABLE_WRITES` gate, so it does not match the current scoped-token server.
+Do not treat it as a live check of this HTTP endpoint without updating it.
+
+## Local operation
 
 | Piece | Value |
 | --- | --- |
-| Service | Railway `mcp`, root `/`, built from `Dockerfile.mcp` |
-| URL | `https://mcp-production-89f3.up.railway.app/mcp` |
-| Listen | `PORT=8080` |
-| API target | `CONTROL_PLANE_URL=http://api.railway.internal:8000` (private) |
-| Credential | `CONTROL_PLANE_TOKEN` = `operate`-scoped token, label `mcp-hosted` |
-| Client secret | `MCP_CLIENT_TOKEN`, stored in `.env.mcp-hosted` (gitignored) |
-| Allowed host | `MCP_ALLOWED_HOSTS=mcp-production-89f3.up.railway.app` |
+| Compose service | `mcp`, profile `mcp`, built from `Dockerfile.mcp` at the repo root |
+| URL | `http://127.0.0.1:8765/mcp` |
+| Publish | `127.0.0.1:8765:8765` only |
+| API target | `CONTROL_PLANE_URL=http://api:8000` (private Compose network) |
+| Credential | `MCP_CONTROL_PLANE_TOKEN` from `.env.mcp-local`, `operate`-scoped |
+| Client secret | `MCP_CLIENT_TOKEN` from `.env.mcp-local` |
+| Allowed host | `localhost`, `127.0.0.1`, `localhost:8765`, `127.0.0.1:8765` |
 
-Only the tool surface is public: the API itself stays on the private network.
-The service cannot delete anything, because its token is `operate`-scoped and
-the API enforces that, not the MCP layer.
+Only the tool surface is published, and only on loopback. The API itself stays
+on the private Compose network. The service cannot delete anything because its
+token is `operate`-scoped and the API enforces that, not the MCP layer.
 
-To point a client at production instead of localhost:
-
-```sh
-export ORCHESTRA_MCP_URL=https://mcp-production-89f3.up.railway.app/mcp
-export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-hosted | cut -d= -f2-)
-```
-
-To revoke the hosted endpoint's access, delete the `mcp-hosted` token with
-`DELETE /api/tokens/{id}`; the service then receives 401 on every call.
+To revoke access, delete the scoped token with `DELETE /api/tokens/{id}`; the
+service then receives 401 on every call.
 
 ## OpenAI clients
 
 ### Codex CLI
 
-Installed and verified on 2026-10-31 (`codex-cli 0.166.0`, logged in via ChatGPT).
 `.codex/config.toml` is committed and project-scoped:
 
-```toml
-[mcp_servers.orchestra]
-url = "https://mcp-production-89f3.up.railway.app/mcp"
-bearer_token_env_var = "ORCHESTRA_MCP_TOKEN"
-default_tools_approval_mode = "writes"
-```
-
 ```sh
-export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-hosted | cut -d= -f2-)
+export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-local | cut -d= -f2-)
 codex mcp list        # orchestra ... enabled  Bearer token
 codex                 # then: "create a cluster called Payments and list clusters"
 ```
@@ -187,18 +203,18 @@ a sandbox you control; the interactive client does not need it.
 
 The desktop app, Codex CLI and the IDE extension share MCP configuration for the
 same Codex host. Add the server under **Settings → MCP servers → Add server**:
-type Streamable HTTP, URL `https://mcp-production-89f3.up.railway.app/mcp`,
-bearer token from `.env.mcp-hosted`. The same values in `~/.codex/config.toml`
-give every Codex surface the server at once.
+type Streamable HTTP, URL `http://127.0.0.1:8765/mcp`, bearer token from
+`.env.mcp-local`. The desktop app must run on the same machine as the Compose
+stack.
 
 ### OpenAI Responses API
 
 If you would rather call the model from a script, the Responses API accepts a
-remote MCP server directly, so the same endpoint works without a CLI:
+remote MCP server directly, so the same local endpoint works without a CLI:
 
 ```python
 tools=[{"type": "mcp", "server_label": "orchestra",
-        "server_url": "https://mcp-production-89f3.up.railway.app/mcp",
+        "server_url": "http://127.0.0.1:8765/mcp",
         "headers": {"Authorization": f"Bearer {token}"}}]
 ```
 

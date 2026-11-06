@@ -11,6 +11,7 @@ from app.mcp_server import (
     BearerMiddleware,
     ControlPlane,
     ControlPlaneError,
+    build_http_app,
     build_server,
 )
 
@@ -235,3 +236,15 @@ def test_http_middleware_rejects_missing_or_wrong_token() -> None:
     assert run([(b'authorization', b'Bearer wrong')])[0] == 401
     assert run([(b'authorization', b'Bearer client-secret')])[0] == 200
     assert calls == ['/mcp']
+
+
+def test_http_healthz_is_public() -> None:
+    from starlette.testclient import TestClient
+
+    control = make(lambda r: json_response({}))
+    app = build_http_app(build_server(control), 'client-secret')
+
+    response = TestClient(app).get('/healthz')
+
+    assert response.status_code == 200
+    assert response.json() == {'status': 'ok'}

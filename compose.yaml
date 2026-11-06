@@ -76,6 +76,43 @@ services:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 30s
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    # .env.mcp-local is gitignored, so a fresh clone or CI must still be able to
+    # run `make up` without it. Enable this service explicitly with
+    # `docker compose --profile mcp up -d --build --wait mcp`.
+    profiles: ['mcp']
+    env_file:
+      - path: .env.mcp-local
+        required: false
+    environment:
+      CONTROL_PLANE_URL: http://api:8000
+      # The SDK compares the Host header exactly, including a non-default port.
+      MCP_ALLOWED_HOSTS: localhost,127.0.0.1,localhost:8765,127.0.0.1:8765
+      # Dockerfile.mcp defaults PORT to 8080 for the retired hosted deployment.
+      PORT: '8765'
+    # .env.mcp-local must hold an operate-scoped token, never the master token.
+    # The image's mcp_server reads CONTROL_PLANE_TOKEN, so map the scoped key.
+    command:
+      - sh
+      - -c
+      - |
+        : "$${MCP_CONTROL_PLANE_TOKEN:?MCP_CONTROL_PLANE_TOKEN is missing from .env.mcp-local}"
+        export CONTROL_PLANE_TOKEN="$$MCP_CONTROL_PLANE_TOKEN"
+        exec python -m app.mcp_server --http
+    ports:
+      - '127.0.0.1:8765:8765'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
   web:
     build: ./frontend
     environment:

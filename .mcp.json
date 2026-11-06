@@ -2,7 +2,7 @@
   "mcpServers": {
     "orchestra": {
       "type": "http",
-      "url": "${ORCHESTRA_MCP_URL:-https://mcp-production-89f3.up.railway.app/mcp}",
+      "url": "${ORCHESTRA_MCP_URL:-http://127.0.0.1:8765/mcp}",
       "headers": {
         "Authorization": "Bearer ${ORCHESTRA_MCP_TOKEN}"
       }

@@ -17,7 +17,7 @@ Orkes Conductor is the commercial product around an open-source engine. This pro
 | Engine observability | Real telemetry scraped from Conductor's Micrometer/Prometheus endpoint: queue depth, task execution and queue-wait time, terminal outcomes, JVM heap, uptime |
 | Worker isolation per environment | Conductor **task domains** (`taskToDomain`) with the documented `NO_DOMAIN` fallback; `WORKER_DOMAIN` runs an isolated fleet |
 | Applications, RBAC, multi-tenant control plane | **Not reproduced.** Single owner, one workspace, no SSO/billing — deliberately out of scope |
-| Hosted platform | Self-hosted on one free VM (`docs/DEPLOY_FREE.md`), not a managed service |
+| Hosted platform | **Local Docker Compose is the default.** An always-on free VM is optional and has never been verified on a real host (`docs/DEPLOY_FREE.md`); neither is a managed service |
 
 ## What works today
 
@@ -43,6 +43,17 @@ docker compose up -d --build --wait --wait-timeout 240
 Open **http://localhost:3000** and sign in with `OWNER_PASSWORD` (or `CONTROL_PLANE_TOKEN`) from `.env`.
 
 Only the dashboard (`127.0.0.1:3000`) and the authenticated API (`127.0.0.1:8000`) are published. Conductor and PostgreSQL stay on the private Compose network; the application database is created automatically inside the same PostgreSQL instance but in its **own database**, separate from Conductor's schema.
+
+The MCP server for agents is optional and behind the Compose profile `mcp`
+(only `127.0.0.1:8765` is published). It needs `.env.mcp-local` with an
+`operate`-scoped token, so it is not started by `make up`:
+
+```sh
+docker compose --profile mcp up -d --build --wait mcp
+```
+
+See [docs/MCP.md](docs/MCP.md). The default deployment is this local stack; the
+VM profile in [docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md) is optional.
 
 ## Manage development through release
 
@@ -122,7 +133,7 @@ make smoke        # real Conductor executions, retries, termination
 
 The backend suite includes an end-to-end cycle on deterministic local infrastructure: register project → register service → observe healthy → simulate a failing check → incident created → inspect evidence → restore health → automatic recovery and resolution. It also covers SSRF rejection, secret sealing, credential redaction, alert deduplication and cooldowns, connector token rotation and agent authentication.
 
-`scripts/recovery.py` is destructive and local-Compose-only. Never run it against Railway or any shared stack.
+`scripts/recovery.py` is destructive and local-Compose-only. Never run it against a shared or production stack.
 
 ## Configuration
 
@@ -152,15 +163,17 @@ The backend suite includes an end-to-end cycle on deterministic local infrastruc
 - Alerts support webhooks only (email/Slack are extension points).
 - Definition registration is limited to combinations of the four built-in worker tasks. To add a new task type you must ship worker code; the engine will not execute anything else from this UI.
 - The collector runs inside the API process. Scaling the API horizontally is safe (advisory lock) but the collector is not a separate worker fleet.
-- Deployment is manual; no Railway resources were changed by this work.
+- Deployment is manual local Compose; the earlier Railway deployment is retired and was not changed by this work.
 
-## Deploy it free
+## Deploy it free (optional VM)
+
+The default deployment is local Compose above. For an optional always-on host:
 
 ```sh
 ./scripts/deploy_wizard.sh
 ```
 
-Seven guided stages: access model (Tailscale or public Caddy + DuckDNS), Oracle Always Free VM, Docker, DNS, generated secrets, stack start, verification. Details, licences, memory budget and caveats: [docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md).
+Seven guided stages: access model (Tailscale or public Caddy + DuckDNS), Oracle Always Free VM, Docker, DNS, generated secrets, stack start, verification. The VM profile has never been verified on a real host. Details, licences, memory budget and caveats: [docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md).
 
 ```sh
 ./scripts/backup.sh    # both databases, 14-day retention, optional offsite

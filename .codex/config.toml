@@ -1,13 +1,14 @@
 # Project-scoped Codex MCP configuration (trusted projects only).
 # The bearer token is read from the environment, never stored here.
 #
-#   export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-hosted | cut -d= -f2-)
+#   export ORCHESTRA_MCP_TOKEN=$(grep '^MCP_CLIENT_TOKEN=' .env.mcp-local | cut -d= -f2-)
+#   docker compose --profile mcp up -d --build --wait mcp
 #
-# Point at a local stack with ORCHESTRA_MCP_URL=http://127.0.0.1:8765/mcp by
-# replacing `url` below.
+# Override ORCHESTRA_MCP_URL to point at another endpoint; it defaults to the
+# local Compose service below.
 
 [mcp_servers.orchestra]
-url = "https://mcp-production-89f3.up.railway.app/mcp"
+url = "http://127.0.0.1:8765/mcp"
 bearer_token_env_var = "ORCHESTRA_MCP_TOKEN"
 startup_timeout_sec = 20
 tool_timeout_sec = 90
