@@ -303,3 +303,35 @@ At the initial delivery checkpoint, no remote was configured. The Orchestra AI r
 - Verified: `GET /healthz` → 200; unauthenticated `POST /mcp` → 401; the server process (PID 1) holds the scoped token, which differs from the master token; with that token `GET /api/projects` → 200 and the admin-only `DELETE /api/tokens/{id}` → 403.
 - A real MCP client (Claude Code, user-scoped `orchestra-local` → `http://127.0.0.1:8765/mcp`) reconnected to the container: `infrastructure_health` returned storage/engine connected, API up, four workers polling, Gemini disabled; `list_projects` returned five projects.
 - Not verified: the project-scoped `.mcp.json` entry, which needs `ORCHESTRA_MCP_TOKEN` exported to the client and was rejected with 401 here; Codex and OpenCode against the container; behaviour across a Mac reboot. `scripts/mcp_smoke.py` remains stale.
+
+### Agent session review, first slice — November 13, 2026
+
+Direction changed: Orchestra AI now leads with reviewing coding-agent sessions (`docs/plans/agent-session-review.md`). The triage-agent and Nitro ideas were dropped before any work started. The control plane is unchanged.
+
+- Added `review/`, a standalone package (`orchestra_review`) that uses only the standard library and needs Python 3.11 or later. It reads Claude Code transcripts (`~/.claude/projects`, one session per file, with subagent files kept separate) and OpenCode sessions (through `opencode session export`, or from saved export files).
+- Detectors:
+  - recurring mistakes across sessions, matched on the last error line with numbers, ids and runs of `=` ignored;
+  - blind retries (identical failure with nothing in between that could have changed the result);
+  - unchanged repeats (identical output 3 or more times within 15 steps);
+  - failure streaks.
+- Claude Code permission denials, auto-mode classifier refusals and user interruptions count as blocked, not failed. Claude Code usage is counted once per `message.id`, because streaming repeats it for each content block.
+- Cost appears only where the agent recorded it, and the report says that Claude Code's figure is its own list-price number. Evidence is redacted for credential-shaped strings.
+- OpenCode exports are written to a temporary file: through a pipe, a 260 KB export arrived truncated and failed to parse.
+- Added a CI step that runs `review/tests` in the API container.
+
+### Executed verification
+
+- `docker compose run --rm --no-deps -v "$PWD/review:/review:ro" api python -m pytest /review/tests -q -p no:cacheprovider` → **11 passed** (Python 3.11). The fixtures are synthetic; no real transcript is used in tests.
+- `pip install ./review` into a fresh virtual environment → the `orchestra-review` command ran from `/tmp`.
+- Real run on this Mac (`python -m orchestra_review --opencode-project ..`): 24 sessions (20 Claude Code, 4 OpenCode), 3,586 tool calls, 69 failed, 7 blocked.
+  - **0 wasted steps** under the in-session rules.
+  - **33 of 69 failures (48%) recur across sessions.** The largest groups: `pdftoppm` missing (8 sessions), zsh `=` expansion from `echo ====` (5 sessions, 7 failures), `No module named 'fitz'` (5), and zsh "no matches found" on an empty glob (5).
+  - This result is why the problem statement now leads with recurring mistakes rather than in-session waste.
+
+### Not verified
+
+- The new CI step has not run in GitHub Actions yet.
+- Only this Mac's sessions have been read; other people's transcripts may use fields this importer has not seen.
+- OpenCode is read for one project directory at a time.
+- The "last error line" rule can group two unrelated failures that share a generic last line, and it can split one cause that prints different last lines. It has not been checked against hand labels.
+- No model is used yet; suggested instruction lines are the next slice.
