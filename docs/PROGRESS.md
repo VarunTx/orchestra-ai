@@ -388,3 +388,23 @@ Direction changed: Orchestra AI now leads with reviewing coding-agent sessions (
   After: 0/0, reported as "too early".
 - `docker compose run --rm --no-deps -v "$PWD/review:/review:ro" api python -m pytest /review/tests -q -p no:cacheprovider` → **21 passed**. The tests include a case where 8 later sessions exist but only 2 tried the action, which stays "too early".
 - **Not verified:** the exposure tests are pattern approximations and have not been checked against hand labels. For example, zsh's `[[ a == b ]]` is safe but counts as an attempt.
+
+### Shareable summaries, repo page, first push — November 13, 2026
+
+- Pushed `052d808` (fix suggestions, apply and measurement) to `main`. With the owner's approval, changed the GitHub repository description to "Finds the mistakes your coding agent repeats across sessions, from local logs" and cleared the homepage, which pointed to the retired Railway app.
+- Added `orchestra-review share` and `orchestra-review combine` (`orchestra_review/share.py`).
+  - **A share contains:** counts, agent names, model names, months, and per-cause rows (rule category, tool kind, scrubbed cause, sessions hit and tried, failed steps).
+  - **A share never contains:** session ids, titles, projects, commands or costs. Causes are scrubbed of paths, file names, URLs, emails and credential-shaped strings.
+  - `share` prints a preview of everything in it on stderr. `combine` counts each person once per cause.
+- Fix rules now carry a category name.
+- Rule-less causes now count an attempt as a call to the same tool that failed, instead of any step that mentions a word from the cause. On the real logs, the browser local-file cause went from 4/23 to 4/6 sessions.
+
+### Executed verification
+
+- `docker compose run --rm --no-deps -v "$PWD/review:/review:ro" api python -m pytest /review/tests -q -p no:cacheprovider` → **25 passed**. These include a synthetic share built from sessions full of names and paths, asserting none survive, and an end-to-end CLI share.
+- A real share from this Mac (25 sessions, 3,785 tool calls, 72 failed, 33 recurring) was searched for the owner's name, home paths, project names and temp paths: none found.
+
+### Not verified
+
+- No other person's share has been collected yet.
+- The scrubbing is pattern-based. A cause quoting a bare word (for example a private project name with no path or extension) would pass through, which is why the preview is shown before sending.

@@ -23,25 +23,25 @@ def fix_id(key):
     return hashlib.sha256('|'.join(key).encode()).hexdigest()[:8]
 
 
-RULES=[
-    (re.compile(r"No module named '([\w.]+)'"),
+RULES=[  # (name, cause pattern, line, which steps attempted the action)
+    ('missing-python-module',re.compile(r"No module named '([\w.]+)'"),
      lambda m,kind:f"Python module `{m[1]}` is not importable with the default `python3` here. Use the project's virtualenv "
               f"(`.venv/bin/python`) if it has one; otherwise ask before installing `{m[1]}`.",
      lambda m,kind:shell_mentions(m[1])),
-    (re.compile(r'\(eval\):#: ==? ?.*not found|: ==+ not found'),
+    ('zsh-equals-expansion',re.compile(r'\(eval\):#: ==? ?.*not found|: ==+ not found'),
      lambda m,kind:"The shell is zsh: an unquoted word starting with `=` (for example `echo ====`) is expanded as a command "
               "path and fails. Quote separators: `echo '===='`.",
      lambda m,kind:lambda step:step.kind=='shell' and re.search(r'(?:^|[\s;&|(])=',step.target) is not None),
-    (re.compile(r'no matches found'),
+    ('zsh-empty-glob',re.compile(r'no matches found'),
      lambda m,kind:"The shell is zsh: a glob that matches nothing is an error, not an empty list. Check the directory first "
               "or quote the pattern.",
      lambda m,kind:lambda step:step.kind=='shell' and re.search(r'[*?]',step.target) is not None),
-    (re.compile(r'`?([\w.+-]+)`? is not installed'),
+    ('missing-program',re.compile(r'`?([\w.+-]+)`? is not installed'),
      lambda m,kind:(f"Reading PDFs with the Read tool fails here because `{m[1]}` is not installed; extract the text with "
                     f"an installed tool or library instead." if kind=='read' else
                     f"`{m[1]}` is not installed on this machine. Don't rely on it; use an installed alternative or ask before installing it."),
      lambda m,kind:(lambda step:step.kind=='read' and step.target.lower().split(':')[0].endswith('.pdf')) if kind=='read' else shell_mentions(m[1])),
-    (re.compile(r'command not found: ([\w.+-]+)|([\w.+-]+): command not found|^([\w.+-]+) not found'),
+    ('missing-program',re.compile(r'command not found: ([\w.+-]+)|([\w.+-]+): command not found|^([\w.+-]+) not found'),
      lambda m,kind:f"`{m[1] or m[2] or m[3]}` is not installed on this machine. Don't rely on it; use an installed alternative "
               f"or ask before installing it.",
      lambda m,kind:shell_mentions(m[1] or m[2] or m[3])),
@@ -60,18 +60,24 @@ def shell_mentions(word):
 
 def rule_fix(key):
     cause=key[1]
-    for pattern,make,_ in RULES:
+    for _,pattern,make,_ in RULES:
         match=pattern.search(cause)
         if match: return Fix(fix_id(key),make(match,key[0]),'rule')
     return None
 
 
-def exposure(key):
+def category(key):
+    return next((name for name,pattern,_,_ in RULES if pattern.search(key[1])),'other')
+
+
+def exposure(key,tools=None):
     """Which steps attempted the action behind a mistake, whether or not they failed.
-    A fix is judged only on sessions that tried the action; otherwise a change of task looks like a cure."""
-    for pattern,_,expose in RULES:
+    A fix is judged only on sessions that tried the action; otherwise a change of task looks like a cure.
+    Without a rule, an attempt is a call to the same tool that failed (`tools`), or else a step that names the cause."""
+    for _,pattern,_,expose in RULES:
         match=pattern.search(key[1])
         if match: return expose(match,key[0])
+    if tools: return lambda step:step.tool in tools
     names=anchors(key[1])
     return lambda step:step.kind==key[0] and any(name in step.target.lower() for name in names)
 

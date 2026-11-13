@@ -80,7 +80,8 @@ def fixes_in_place(sessions,extra=()):
     rows=[]
     for path in instruction_paths(sessions,extra):
         for fid,added in markers(path):
-            tried=exposure(keys[fid]) if fid in keys else None  # unknown when the mistake is absent from these logs
+            tools={x.tool for steps in signatures[keys[fid]].values() for x in steps} if fid in keys else None
+            tried=exposure(keys[fid],tools) if fid in keys else None  # unknown when the mistake is absent from these logs
             rows.append({'file':str(path),**measure(fid,added,governed(path,sessions),hits,tried)})
     return rows
 

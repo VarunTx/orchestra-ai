@@ -25,7 +25,10 @@ python -m pip install ./review             # Python 3.11+, no dependencies
 orchestra-review                           # report for Claude Code and the current project's OpenCode sessions
 orchestra-review apply 14b08e4d --to ~/.claude/CLAUDE.md   # add a line, with a dated marker
 orchestra-review                           # later runs compare sessions before and after each line
+orchestra-review share > mine.json         # a summary with no paths, commands or project names, safe to send
 ```
+
+**Help wanted:** run `orchestra-review share` on your own sessions and send the JSON, by opening an issue or messaging the author. The question is which mistakes recur across *people*, not just across one person's sessions. Everything in the share is printed for you to review before you send it.
 
 How it decides, and where it stops:
 - **Recurring mistake:** failures in two or more sessions that share the same last error line, ignoring numbers and ids.

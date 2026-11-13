@@ -4,7 +4,9 @@ Reads Claude Code transcripts (~/.claude/projects) and OpenCode sessions for the
 project directories (default: the current directory).
 
   orchestra-review                         report, with a suggested instruction line per recurring mistake
-  orchestra-review apply ID --to FILE      append those lines to an instruction file, dated for later measurement"""
+  orchestra-review apply ID --to FILE      append those lines to an instruction file, dated for later measurement
+  orchestra-review share > mine.json       counts and scrubbed causes only, safe to send to someone else
+  orchestra-review combine a.json b.json   which mistakes recur for how many people"""
 import argparse
 from datetime import datetime,timedelta,timezone
 import json
@@ -16,6 +18,7 @@ from . import claude_code,opencode
 from .detectors import recurring
 from .fixes import suggest
 from .instructions import apply
+from . import share
 from .report import build,render
 
 
@@ -53,6 +56,8 @@ def sources(parser):
 def main(argv=None):
     argv=sys.argv[1:] if argv is None else argv
     if argv[:1]==['apply']: return apply_main(argv[1:])
+    if argv[:1]==['share']: return share_main(argv[1:])
+    if argv[:1]==['combine']: return combine_main(argv[1:])
     parser=argparse.ArgumentParser(prog='orchestra-review',description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
     sources(parser)
     parser.add_argument('--instructions',action='append',default=[],help='extra instruction file to measure fixes in; repeatable')
@@ -88,6 +93,29 @@ def apply_main(argv):
     written=apply(path,chosen)
     for fix in chosen: print(('added   ' if fix.id in written else 'present ')+f'[{fix.id}] {fix.line}')
     print(f'→ {path}')
+    return 0
+
+
+
+def share_main(argv):
+    parser=argparse.ArgumentParser(prog='orchestra-review share',
+                                   description='Print a share (JSON) on stdout and a preview of everything in it on stderr.')
+    sources(parser)
+    args=parser.parse_args(argv)
+    data=share.summary(collect(args))
+    print(share.preview(data),file=sys.stderr)
+    print(json.dumps(data,indent=2))
+    return 0
+
+
+def combine_main(argv):
+    parser=argparse.ArgumentParser(prog='orchestra-review combine',description='Combine shares from several people.')
+    parser.add_argument('files',nargs='+')
+    parser.add_argument('--json',action='store_true')
+    args=parser.parse_args(argv)
+    try: data=share.combine(share.load(args.files))
+    except (OSError,ValueError) as error: print(error,file=sys.stderr);return 1
+    print(json.dumps(data,indent=2) if args.json else share.render_combined(data))
     return 0
 
 

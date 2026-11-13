@@ -83,6 +83,7 @@ Wasted steps are the union of blind retries and unchanged repeats. Claude Code c
   - shell commands with a glob.
 
   Before and after both count only sessions that tried the action, and the verdict stays "too early" until 5 such sessions follow the marker. Sessions that hit the mistake always count as having tried it. These are approximations; for example, `[[ a == b ]]` is safe in zsh but still counts as an attempt.
+- **Shares (built 2026-11-13):** `orchestra-review share` prints a JSON summary of counts and scrubbed causes, with a preview on stderr. `combine` merges several people's shares, counting each person once per cause. The next step is collecting 3–5 shares from other developers.
 - Verify the model drafter against a real model. The Nitro's Ollama is not reachable over Tailscale yet, and the Mac has none.
 - A plain-language explanation of in-session findings from a model, which must cite step numbers.
 - A view in the dashboard.
