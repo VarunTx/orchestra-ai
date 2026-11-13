@@ -57,11 +57,34 @@ Wasted steps are the union of blind retries and unchanged repeats. Claude Code c
 3. Unknown cost is shown as unknown.
 4. Unit tests cover both importers (from synthetic fixtures), every detector, deduplicated usage, blocked calls and redaction. They run with pytest in the API container (Python 3.11) and in CI.
 
-## Next slices (not started)
+## Second slice: fixes and measurement (built 2026-11-13)
 
-1. **A suggested instruction line for each recurring mistake.** A model drafts the line from the cited failures, and the draft is shown only if it cites them. Running a model locally is optional, so the report must stay useful without one.
-2. **Before-and-after measurement.** Record when a line was added, then compare how often that mistake occurs in sessions afterwards. This is the result to put in the README and the post.
-3. A plain-language explanation of in-session findings from a model, which must cite step numbers.
+1. **One suggested line per recurring mistake.**
+   - Known causes get a fixed rule: a missing program, a Python module that can't be imported, zsh `=` expansion, and zsh globs that match nothing.
+   - For any other cause, a local Ollama model can draft a line (`--model`). The evidence goes to the model inside `<evidence>` tags as redacted data.
+   - A draft is kept only if it is 20–220 characters, names a distinctive word from the cause, and has no URL or download, delete, `sudo`, `eval` or base64 pattern. This matters because log text is untrusted, and the line ends up in a file the agent obeys.
+2. **`apply`** appends chosen lines with a marker `<!-- orchestra-review:<id> <date> -->`.
+   - It writes each line once.
+   - It refuses drafted lines unless `--include-drafted` is passed.
+3. **Measurement.** Each marker is matched to the sessions that read its file:
+   - the Claude Code global file governs Claude Code sessions;
+   - the OpenCode global file governs OpenCode sessions;
+   - a project file governs that project's sessions.
+
+   The report compares sessions that hit the mistake before and after the date. Below 5 sessions afterwards, it reports "too early".
+
+## Next
+
+- **Applied 2026-11-13T17:58Z:** the six rule-based lines went into `~/.claude/CLAUDE.md`, with the owner's approval. Baseline: 8, 5, 5, 5, 2 and 2 of 20 Claude Code sessions hit these mistakes before. Let sessions accumulate until the comparison stops reading "too early".
+- **Exposure (built 2026-11-13):** each fix rule also defines which steps *attempted* the action:
+  - shell commands that mention the module or program;
+  - Read calls on `.pdf` files;
+  - shell commands with a word starting with `=`;
+  - shell commands with a glob.
+
+  Before and after both count only sessions that tried the action, and the verdict stays "too early" until 5 such sessions follow the marker. Sessions that hit the mistake always count as having tried it. These are approximations; for example, `[[ a == b ]]` is safe in zsh but still counts as an attempt.
+- Verify the model drafter against a real model. The Nitro's Ollama is not reachable over Tailscale yet, and the Mac has none.
+- A plain-language explanation of in-session findings from a model, which must cite step numbers.
 - A view in the dashboard.
 - Before-and-after measurement: add a suggested instruction, then compare waste in later sessions.
 - A README rewrite and the LinkedIn post, written once there are real numbers.

@@ -335,3 +335,56 @@ Direction changed: Orchestra AI now leads with reviewing coding-agent sessions (
 - OpenCode is read for one project directory at a time.
 - The "last error line" rule can group two unrelated failures that share a generic last line, and it can split one cause that prints different last lines. It has not been checked against hand labels.
 - No model is used yet; suggested instruction lines are the next slice.
+
+### Agent session review, second slice: fixes and measurement — November 13, 2026
+
+- `orchestra_review/fixes.py` suggests one instruction line per recurring mistake.
+  - **Rules** cover a missing program (with a Read-tool-specific line for PDFs), a Python module that can't be imported, zsh `=` expansion, and zsh globs that match nothing.
+  - **Optional drafting:** a local Ollama model (`--model`, `--model-url`) drafts a line when no rule matches. The evidence is redacted and wrapped as data.
+  - **What a draft must pass:** it is kept only if it is 20–220 characters, names a distinctive word from the cause, and contains no URL, download, delete, `sudo`, `eval` or base64 pattern.
+- `orchestra-review apply <id> --to FILE` appends lines with a dated `<!-- orchestra-review:<id> <date> -->` marker.
+  - It never writes the same id twice.
+  - It refuses model-drafted lines unless `--include-drafted` is passed.
+- `orchestra_review/instructions.py` finds markers in the global Claude Code and OpenCode instruction files, in each session project's `AGENTS.md` and `CLAUDE.md`, and in any `--instructions` file. For each marker, it reports how many governed sessions hit the mistake before and after the date. With fewer than 5 sessions afterwards, the verdict is "too early".
+- The signature now keeps runs of `=` as `==` instead of masking them, so zsh `=` expansion stays recognisable.
+- The README now opens with this tool and its real results; the control plane follows as "The control plane underneath".
+
+### Executed verification
+
+- `docker compose run --rm --no-deps -v "$PWD/review:/review:ro" api python -m pytest /review/tests -q -p no:cacheprovider` → **19 passed** (Python 3.11). The model path was exercised against a local HTTP stub: it accepted a grounded draft and rejected an injected `wget` line. A secret placed in the evidence did not reach the prompt. An unreachable model yields no line rather than an error.
+- Real run (24 sessions, 3,689 tool calls, 70 failed): 33 failures recur across sessions. Rules produced a line for 6 of the 7 recurring causes. The exception is the browser pane refusing local-file tabs, which needs `--model`.
+
+### Not verified
+
+- No line has been applied to a real instruction file, so no real before-and-after result exists yet.
+- The model drafter has not run against a real model. Ollama is not installed on the Mac, and the Nitro's Ollama did not answer on `varuntx-nitro-an515-54:11434` over Tailscale; it probably listens only on localhost.
+- The new CI step from the first slice has not run in GitHub Actions; the slice is unpushed.
+
+### First fixes applied to a real instruction file — November 13, 2026
+
+- With the owner's approval, ran `orchestra-review apply` for the six rule-based fixes (`6eab0c6e`, `14b08e4d`, `97e10ce7`, `ac5eae34`, `a48e1ed9`, `06cd6b75`) into `~/.claude/CLAUDE.md`. The file did not exist before.
+- **Found while applying:** a date-only marker would have counted sessions that started earlier the same day, without the line, as "after". Markers now carry a UTC time (`2026-11-13T17:58Z`) and the comparison uses it. The first file, written seconds earlier with date-only markers, was checked to contain only those six lines, removed, and rewritten. 19 tests pass, including a same-day case.
+- **Baseline from the real report:** of 20 Claude Code sessions before the marker, these mistakes appeared in 8 (`pdftoppm`), 5 (zsh `=`), 5 (`fitz`), 5 (zsh empty glob), 2 (`pypdf`) and 2 (`docx`). After: 0 of 0, reported as "too early".
+- **Not verified:**
+  - No session has run since the marker, so whether the lines change agent behaviour is unknown.
+  - OpenCode sessions do not read this file.
+  - A future "0 after" will not distinguish a working fix from sessions that never tried the same action. Exposure-based counting is the noted next refinement.
+
+### Fixes judged only on sessions that tried the action — November 13, 2026
+
+- Each fix rule now has an exposure test: which steps attempted the action, whether or not they failed. The fallback for causes no rule covers is a step of the same kind that mentions a distinctive word from the cause.
+- The before-and-after comparison counts sessions that tried the action, and judges the verdict only on those. "Too early" holds until 5 such sessions follow the marker. Sessions that hit the mistake always count as attempts. If a marker's mistake is absent from the logs being read, the row falls back to all sessions and says so.
+- **Baseline, re-measured on the real logs (hit / tried, Claude Code, before 2026-11-13T17:58Z):**
+
+  | Mistake | Hit / tried |
+  | --- | --- |
+  | `pdftoppm` | 8/9 |
+  | zsh `=` | 5/14 |
+  | `fitz` | 5/9 |
+  | zsh empty glob | 5/15 |
+  | `pypdf` | 2/9 |
+  | `docx` | 2/3 |
+
+  After: 0/0, reported as "too early".
+- `docker compose run --rm --no-deps -v "$PWD/review:/review:ro" api python -m pytest /review/tests -q -p no:cacheprovider` → **21 passed**. The tests include a case where 8 later sessions exist but only 2 tried the action, which stays "too early".
+- **Not verified:** the exposure tests are pattern approximations and have not been checked against hand labels. For example, zsh's `[[ a == b ]]` is safe but counts as an attempt.

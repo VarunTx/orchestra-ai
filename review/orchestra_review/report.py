@@ -1,7 +1,10 @@
 """Turns sessions and findings into one structure, rendered as text or JSON."""
 from collections import Counter
+from pathlib import Path
 
-from .detectors import recurring,review,wasted
+from .detectors import by_signature,recurring,review,wasted
+from .fixes import exposure,fix_id,suggest
+from .instructions import global_files,governed,markers,measure
 from .redact import redact
 
 TITLES={'repeated_failure':'Blind retry','unchanged_repeat':'Unchanged repeat','failure_streak':'Failure streak'}
@@ -12,7 +15,7 @@ def short(text,limit=110):
     return text if len(text)<=limit else text[:limit-1]+'…'
 
 
-def build(sessions,top=10):
+def build(sessions,top=10,model=None,model_url=None,instruction_files=()):
     findings=[f for s in sessions for f in review(s)]
     steps=sum(len(s.steps) for s in sessions)
     failed=sum(1 for s in sessions for x in s.steps if x.ok is False)
@@ -43,7 +46,8 @@ def build(sessions,top=10):
         'findings':[finding_row(f) for f in ranked[:top]],
         'finding_counts':dict(Counter(f.kind for f in findings)),
         'recurring_failed_steps':sum(len(v) for _,hits in repeats for v in hits.values()),
-        'recurring':[recurring_row(key,hits) for key,hits in repeats[:top]],
+        'recurring':[recurring_row(key,hits,suggest(key,hits,model,model_url)) for key,hits in repeats[:top]],
+        'fixes_in_place':fixes_in_place(sessions,instruction_files),
         'top_sessions':[session_row(s,findings) for s in sorted(sessions,key=lambda s:-len(s.steps))[:top]],
     }
 
@@ -53,10 +57,32 @@ def finding_row(f):
             'target':short(f.target,200),'steps':f.steps,'wasted_steps':f.wasted,'error':short(f.error,200) if f.error else None}
 
 
-def recurring_row(key,hits):
+def recurring_row(key,hits,fix):
     first=next(iter(hits.values()))[0]
     return {'kind':key[0],'cause':short(key[1],160),'sessions':len(hits),'failed_steps':sum(map(len,hits.values())),
-            'example':short(first.target,200)}
+            'example':short(first.target,200),'fix':{'id':fix.id,'line':fix.line,'source':fix.source,'note':fix.note}}
+
+
+def instruction_paths(sessions,extra=()):
+    paths=[*global_files().values(),*map(Path,extra)]
+    for project in sorted({s.project for s in sessions if s.project}):
+        paths+=[Path(project)/'AGENTS.md',Path(project)/'CLAUDE.md']
+    unique=[]
+    for path in paths:
+        if path.expanduser().resolve() not in [p.expanduser().resolve() for p in unique]: unique.append(path)
+    return unique
+
+
+def fixes_in_place(sessions,extra=()):
+    signatures=by_signature(sessions)
+    hits={fix_id(key):set(by_session) for key,by_session in signatures.items()}
+    keys={fix_id(key):key for key in signatures}
+    rows=[]
+    for path in instruction_paths(sessions,extra):
+        for fid,added in markers(path):
+            tried=exposure(keys[fid]) if fid in keys else None  # unknown when the mistake is absent from these logs
+            rows.append({'file':str(path),**measure(fid,added,governed(path,sessions),hits,tried)})
+    return rows
 
 
 def session_row(s,findings):
@@ -105,4 +131,14 @@ def render(data):
         for r in data['recurring']:
             out.append(f"  {r['sessions']} sessions, {r['failed_steps']} failures — {r['cause']}")
             out.append(f"    e.g. {short(r['example'],100)}")
+            fix=r['fix']
+            out.append(f"    fix [{fix['id']}, {fix['source']}]: {fix['line']}" if fix['line'] else f"    no fix: {fix['note']}")
+        if any(r['fix']['line'] for r in data['recurring']):
+            out.append('  Apply one with: orchestra-review apply <id> --to <instruction file>')
+    if data['fixes_in_place']:
+        out.append('')
+        out.append('Fixes in place: sessions that hit the mistake / sessions that tried the action, before → after')
+        for f in data['fixes_in_place']:
+            side=lambda s:f"{s['hit']}/{s['tried']}" if s['tried'] is not None else f"{s['hit']}/{s['sessions']} (all sessions)"
+            out.append(f"  [{f['id']}] {f['added']} {Path(f['file']).name}: {side(f['before'])} → {side(f['after'])} — {f['verdict']}")
     return '\n'.join(out)
