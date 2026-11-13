@@ -408,3 +408,4 @@ Direction changed: Orchestra AI now leads with reviewing coding-agent sessions (
 
 - No other person's share has been collected yet.
 - The scrubbing is pattern-based. A cause quoting a bare word (for example a private project name with no path or extension) would pass through, which is why the preview is shown before sending.
+- GitHub Actions "Verify control plane" passed for `052d808` and `c383e90` (run 43481247331). That includes the new `review/tests` step, its first run in CI.
