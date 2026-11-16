@@ -1,58 +1,14 @@
 # Orchestra AI
 
-**Your coding agent keeps making the same mistakes, because every session starts without memory of your machine.** Orchestra Review reads the session logs that Claude Code and OpenCode already keep on your computer. It finds the failures that recur across sessions, suggests one instruction line for each, and then measures whether that line stopped the mistake. Nothing is uploaded.
+A free, open-source, self-hostable **personal developer control plane** for the projects you build. MIT licensed — run it for yourself, fork it, or contribute. Register projects, environments, services and clusters; watch real health checks and incidents; and operate durable Conductor workflows — all from one dashboard, for one owner.
 
-## What it found in real sessions
-
-These are the author's own 24 sessions from 2026-10-20 to 2026-11-13: 3,689 tool calls, of which 70 failed.
-
-| | |
-| --- | --- |
-| Failures that matched a mistake from another session | **33 of 70 (47%)** |
-| Steps wasted inside a single session (blind retries, unchanged repeats) | **0** |
-
-The agents rarely looped within one session. They hit the same environment problems session after session:
-
-| Recurring mistake | Sessions | Suggested line (rule-based) |
-| --- | --- | --- |
-| PDF reads fail: `pdftoppm` is not installed | 8 | Reading PDFs with the Read tool fails here because `pdftoppm` is not installed; extract the text with an installed tool or library instead. |
-| zsh treats `echo ====` as `=` expansion (7 failures) | 5 | The shell is zsh: an unquoted word starting with `=` is expanded as a command path and fails. Quote separators. |
-| `No module named 'fitz'` | 5 | Python module `fitz` is not importable with the default `python3` here. Use the project's virtualenv if it has one. |
-| zsh errors on a glob that matches nothing | 5 | The shell is zsh: a glob that matches nothing is an error, not an empty list. |
-
-```sh
-python -m pip install ./review             # Python 3.11+, no dependencies
-orchestra-review                           # report for Claude Code and the current project's OpenCode sessions
-orchestra-review apply 14b08e4d --to ~/.claude/CLAUDE.md   # add a line, with a dated marker
-orchestra-review                           # later runs compare sessions before and after each line
-orchestra-review share > mine.json         # a summary with no paths, commands or project names, safe to send
-```
-
-**Help wanted:** run `orchestra-review share` on your own sessions and send the JSON, by opening an issue or messaging the author. The question is which mistakes recur across *people*, not just across one person's sessions. Everything in the share is printed for you to review before you send it.
-
-How it decides, and where it stops:
-- **Recurring mistake:** failures in two or more sessions that share the same last error line, ignoring numbers and ids.
-- **In-session waste:** a step counts only when it is provably wasted. For example, a retry that fails with the same output, with no edit in between. A normal fix-and-rerun-tests loop is never counted.
-- **Not failures:** calls refused by a permission rule or interrupted by the user are counted as blocked.
-- **Cost** appears only where the agent recorded it, and is never estimated.
-- **Redaction:** evidence is scrubbed of credential-shaped strings before display.
-- **Suggested lines:**
-  - Known causes get a fixed rule.
-  - For other causes, a local model (Ollama, optional) can draft a line. The draft is kept only if it names the cause and contains no URL or command that downloads or deletes anything, because the evidence is untrusted log text and the line ends up in a file the agent obeys.
-  - Drafted lines are never written without `--include-drafted`.
-- **Measurement:** before-and-after comparisons count only sessions that *tried* the action, for example sessions that read a PDF. A change of task can therefore never look like a cure. A comparison reads "too early" until at least five such sessions follow the line.
-
-Details: [`review/README.md`](review/README.md) and [`docs/plans/agent-session-review.md`](docs/plans/agent-session-review.md).
-
-## The control plane underneath
-
-The rest of this repository is the self-hosted control plane that Orchestra Review grew out of. It is a personal dashboard on Conductor OSS that registers projects, environments, services and clusters, runs real health checks and incidents, and operates durable workflows for one owner.
+> **Looking for Orchestra Review?** The tool that finds the mistakes your coding agent repeats across sessions grew out of this repository and now lives at [VarunTx/orchestra-review](https://github.com/VarunTx/orchestra-review).
 
 ![Live overview](docs/screenshots/overview.png)
 
 Conductor OSS remains the only workflow engine. Orchestra AI adds an application-owned inventory, monitoring and incident layer around it; it never re-implements scheduling, retries or execution state.
 
-### Orkes parity map
+## Orkes parity map
 
 Orkes Conductor is the commercial product around an open-source engine. This project reproduces the parts one developer actually uses, and is explicit about what it does not:
 

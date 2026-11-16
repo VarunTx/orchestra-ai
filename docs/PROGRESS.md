@@ -409,3 +409,9 @@ Direction changed: Orchestra AI now leads with reviewing coding-agent sessions (
 - No other person's share has been collected yet.
 - The scrubbing is pattern-based. A cause quoting a bare word (for example a private project name with no path or extension) would pass through, which is why the preview is shown before sending.
 - GitHub Actions "Verify control plane" passed for `052d808` and `c383e90` (run 43481247331). That includes the new `review/tests` step, its first run in CI.
+
+### Orchestra Review moved to its own repository — November 15, 2026
+
+- With the owner's approval, created the public repository [VarunTx/orchestra-review](https://github.com/VarunTx/orchestra-review). It was built with `git subtree split --prefix=review` from this repository. Its 3 commits carry over with their messages, minus the `Co-Authored-By: Claude` lines, which the owner's global instructions now forbid. This repository's pushed history was not rewritten.
+- The new repository adds an MIT licence, PyPI metadata, a pytest dev extra, CI (Python 3.11–3.13 on Linux, 3.13 on macOS) and `docs/design.md`. Locally, 25 tests pass under Python 3.15 in a fresh virtual environment.
+- Removed `review/` and its CI step from this repository. The README leads with the control plane again and points to the new repository, and `docs/plans/agent-session-review.md` is now a pointer. The entries above remain the record of the first slices.
